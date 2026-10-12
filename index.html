@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#14532d">
-<title>Cartera</title>
+<title>Inversiones JN Merlano</title>
 <style>
 :root{--bg:#f4f6f5;--card:#fff;--ink:#16211b;--mute:#66736b;--line:#dfe5e1;--brand:#14532d;--brand2:#1d7a45;--bad:#b42318;--ok:#067647}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#18211c;--ink:#e8efe9;--mute:#98a79d;--line:#2a372f;--brand:#4ade80;--brand2:#86efac;--bad:#f87171;--ok:#4ade80}}
@@ -136,9 +136,9 @@ details summary{cursor:pointer;font-size:17px;padding:2px 0}
 // ======== CONFIGURACIÓN (pegar los datos del proyecto Supabase de esta instalación) ========
 const SUPABASE_URL = 'https://xyjzsxrordwztizhuizm.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5anpzeHJvcmR3enRpemh1aXptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTAzMjksImV4cCI6MjEwNzM4NjMyOX0.e9mG5xKU2wQrfgfJp8_xoFR4ZJmkwcznAnGaSuv7a5w';
-const NOMBRE_NEGOCIO = 'Cartera';
+const NOMBRE_NEGOCIO = 'Inversiones JN Merlano';
 // Los usuarios entran con nombre de usuario; internamente se guardan como usuario@DOMINIO (no es un correo real).
-const DOMINIO_USUARIO = 'cartera.app';
+const DOMINIO_USUARIO = 'inversionesjn.com';
 const MAX_INTENTOS = 5, MIN_BLOQUEO = 15; // deben coincidir con 04_acceso.sql
 // ============================================================================================
 
@@ -797,7 +797,7 @@ function vConfig() {
     ${campo('c-rep', 'Nombre de quien firma', negocio.representante)}
     <div style="margin-top:12px"><button id="c-save">Guardar</button></div></div>`;
   $('#c-save').onclick = async () => {
-    const val = { nombre: $('#c-nom').value.trim() || 'Mi Negocio', nit: $('#c-nit').value.trim(), telefono: $('#c-tel').value.trim(),
+    const val = { nombre: $('#c-nom').value.trim() || NOMBRE_NEGOCIO, nit: $('#c-nit').value.trim(), telefono: $('#c-tel').value.trim(),
       direccion: $('#c-dir').value.trim(), ciudad: $('#c-ciu').value.trim(), representante: $('#c-rep').value.trim() };
     $('#c-save').disabled = true;
     const { error } = await sb.from('config').upsert({ clave: 'negocio', valor: val });

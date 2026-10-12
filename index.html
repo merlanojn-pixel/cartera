@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<title>Cartera</title>
+<style>
+:root{--bg:#f4f6f5;--card:#fff;--ink:#16211b;--mute:#66736b;--line:#dfe5e1;--brand:#14532d;--brand2:#1d7a45;--bad:#b42318;--ok:#067647}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#18211c;--ink:#e8efe9;--mute:#98a79d;--line:#2a372f;--brand:#4ade80;--brand2:#86efac;--bad:#f87171;--ok:#4ade80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:84px}
+header{position:sticky;top:0;z-index:5;background:var(--brand);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+@media (prefers-color-scheme:dark){header{background:#14532d}}
+header b{font-size:18px}
+header small{opacity:.85;display:block;font-size:12px}
+main{padding:16px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+h2{font-size:18px;margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+input[type=checkbox]{width:auto;margin-right:8px;transform:scale(1.2)}
+button{font:inherit;border:0;border-radius:10px;padding:12px 16px;background:var(--brand);color:#fff;cursor:pointer}
+@media (prefers-color-scheme:dark){button{color:#052e16}}
+button.sec{background:transparent;color:var(--brand);border:1px solid var(--line)}
+button.bad{background:var(--bad);color:#fff}
+button.sm{padding:6px 10px;font-size:13px}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.row>*{flex:0 1 auto}
+.item{padding:12px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.mute{color:var(--mute);font-size:13px}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mute);margin-left:6px}
+.off{opacity:.5}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;color:var(--mute);border-radius:0;padding:14px 2px;font-size:12px}
+nav button.on{color:var(--brand);font-weight:600}
+.msg{padding:10px 12px;border-radius:10px;margin:10px 0;font-size:14px}
+.msg.err{background:#fee4e2;color:#7a271a}
+.msg.ok{background:#d1fadf;color:#05603a}
+.matrix{width:100%;border-collapse:collapse;font-size:14px}
+.matrix th,.matrix td{padding:8px 4px;text-align:center;border-bottom:1px solid var(--line)}
+.matrix td:first-child,.matrix th:first-child{text-align:left}
+.login{max-width:380px;margin:12vh auto 0;padding:0 16px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.stat span{display:block;font-size:12px;color:var(--mute)}
+.stat b{font-size:19px}
+.tabla{font-size:12px}
+.tabla th,.tabla td{text-align:right;vertical-align:top;padding:8px 3px}
+.tabla td:not(:first-child){white-space:nowrap}
+.tabla th:first-child,.tabla td:first-child{text-align:left;white-space:normal;min-width:78px;padding-left:10px}
+.tabla th:last-child,.tabla td:last-child{padding-right:10px}
+.tabla th{font-size:11.5px;color:var(--mute);font-weight:600}
+.tabla .tag{margin:4px 0 0;font-size:11px;padding:2px 6px;white-space:nowrap}
+.tabla tbody tr:active{background:var(--bg)}
+.tabla tfoot td{font-weight:700;border-bottom:0}
+nav{overflow-x:auto}
+nav button{flex:1 0 auto;white-space:nowrap;padding-left:10px;padding-right:10px}
+.viz{--v-cap:#2a78d6;--v-gan:#1baf7a;--v-r1:#6da7ec;--v-r2:#3987e5;--v-r3:#256abf;--v-r4:#184f95;--v-grid:#e1e0d9;--v-base:#c3c2b7;--v-eje:#898781;position:relative}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz{--v-cap:#3987e5;--v-gan:#199e70;--v-grid:#2c2c2a;--v-base:#383835}}
+:root[data-theme="dark"] .viz{--v-cap:#3987e5;--v-gan:#199e70;--v-grid:#2c2c2a;--v-base:#383835}
+.hero-et{font-size:13px;color:var(--mute)}
+.hero{font-size:48px;font-weight:700;line-height:1.1;letter-spacing:-.5px;margin:2px 0 4px;word-break:break-word}
+.sub{font-size:12.5px;margin:2px 0 8px}
+.card h3{font-size:14px;margin:14px 0 2px}
+.v-split{display:flex;gap:2px;height:14px}
+.v-split>div{border-radius:4px;min-width:0}
+.v-dos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.v-dos>div{display:flex;flex-direction:column;gap:1px;font-size:13px;color:var(--mute)}
+.v-dos i,.v-ley i,.v-tr i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-bottom:2px}
+.v-dos b{font-size:18px;color:var(--ink)}
+.v-dos small,.stat small{font-size:11.5px;display:block;margin-top:2px}
+.stat.alerta{border-color:var(--bad)}
+.ok-t{color:var(--ok)}
+.v-ley{display:flex;gap:14px;font-size:12.5px;color:var(--mute);margin:4px 0}
+.v-ley span{display:inline-flex;align-items:center;gap:6px}
+.v-ley i{height:10px;width:10px;border-radius:2px;margin:0}
+.v-svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.v-grid{stroke:var(--v-grid);stroke-width:1}
+.v-base{stroke:var(--v-base);stroke-width:1}
+.v-eje{fill:var(--v-eje);font-size:10px}
+.v-hit{fill:transparent;cursor:pointer;outline:none}
+.v-hit:focus-visible{stroke:var(--ink);stroke-width:1;stroke-opacity:.4}
+.v-barra.on{filter:brightness(1.12)}
+.v-tip{position:absolute;z-index:6;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;box-shadow:0 4px 14px #0002;pointer-events:none;white-space:nowrap}
+.v-tt{font-weight:600;margin-bottom:4px}
+.v-tr{display:flex;align-items:center;gap:6px;color:var(--mute)}
+.v-tr b{color:var(--ink);font-size:14px}
+.v-fila{display:grid;grid-template-columns:86px 1fr auto;gap:8px;align-items:center;margin:8px 0;font-size:13px}
+.v-pista{height:14px}
+.v-rel{height:14px;border-radius:0 4px 4px 0}
+.v-val{text-align:right;font-weight:600}
+.v-val small{display:block;font-weight:400;color:var(--mute);font-size:11px}
+.refresco{opacity:.55}
+.bad-t{color:var(--bad)}
+.tag.bad{color:var(--bad);border-color:var(--bad)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+details summary{cursor:pointer;font-size:17px;padding:2px 0}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script>
+// ======== CONFIGURACIÓN (pegar los datos del proyecto Supabase de esta instalación) ========
+const SUPABASE_URL = 'https://xyjzsxrordwztizhuizm.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5anpzeHJvcmR3enRpemh1aXptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTAzMjksImV4cCI6MjEwNzM4NjMyOX0.e9mG5xKU2wQrfgfJp8_xoFR4ZJmkwcznAnGaSuv7a5w';
+const NOMBRE_NEGOCIO = 'Cartera';
+// Los usuarios entran con nombre de usuario; internamente se guardan como usuario@DOMINIO (no es un correo real).
+const DOMINIO_USUARIO = 'cartera.app';
+// ============================================================================================
+
+const MODULOS = [['personas','Personas'],['prestamos','Préstamos'],['fiados','Fiados'],['pagos','Pagos'],['caja','Caja'],['reportes','Estadísticas']];
+const ACCIONES = ['ver','crear','editar','anular','exportar'];
+const limpiarUsuario = s => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
+const correoDe = s => { const u = limpiarUsuario(s); return u.includes('@') ? u : u + '@' + DOMINIO_USUARIO; };
+const esCorreoReal = s => { const u = limpiarUsuario(s); return u.includes('@') && !u.endsWith('@' + DOMINIO_USUARIO); };
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let me = null, perms = new Set(), tab = 'prestamos', aviso = null, rolSel = null, negocio = { nombre: NOMBRE_NEGOCIO };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const can = (m, a) => !!me && (me.es_admin || perms.has(m + ':' + a));
+const setAviso = (t, tipo = 'err') => { aviso = t ? { t, tipo } : null; };
+const avisoHtml = () => aviso ? `<div class="msg ${aviso.tipo}">${esc(aviso.t)}</div>` : '';
+
+async function init() {
+  if (SUPABASE_URL.startsWith('PEGA')) {
+    $('#app').innerHTML = '<main><div class="card"><h2>Falta configurar</h2><p class="mute">Edita el archivo y pega la URL y la clave publishable de tu proyecto Supabase al inicio del script.</p></div></main>';
+    return;
+  }
+  const { data } = await sb.auth.getSession();
+  if (data.session) await cargarYo(); else vistaLogin();
+}
+
+async function cargarYo() {
+  const { data: u } = await sb.auth.getUser();
+  if (!u.user) return vistaLogin();
+  const { data: p, error } = await sb.from('perfiles').select('*').eq('id', u.user.id).single();
+  if (error || !p) { await sb.auth.signOut(); setAviso('No se encontró tu perfil.'); return vistaLogin(); }
+  me = p; perms = new Set();
+  { const { data: cf } = await sb.from('config').select('valor').eq('clave', 'negocio').maybeSingle(); if (cf && cf.valor) negocio = { ...negocio, ...cf.valor }; }
+  if (!p.es_admin && p.role_id) {
+    const { data: pm } = await sb.from('permisos').select('modulo,accion').eq('role_id', p.role_id);
+    (pm || []).forEach(x => perms.add(x.modulo + ':' + x.accion));
+  }
+  if (!p.activo || (!p.es_admin && !p.role_id)) {
+    await sb.auth.signOut(); me = null;
+    setAviso('Tu cuenta todavía no tiene acceso. Pídele al administrador que la habilite.');
+    return vistaLogin();
+  }
+  if (!tabsVisibles().includes(tab)) tab = tabsVisibles()[0] || 'personas';
+  render();
+}
+
+function vistaLogin(primera = false) {
+  $('#app').innerHTML = `<div class="login">
+    <h1 style="text-align:center;color:var(--brand)">${esc(NOMBRE_NEGOCIO)}</h1>
+    <div class="card">
+      <h2>${primera ? 'Crear administrador inicial' : 'Iniciar sesión'}</h2>
+      ${avisoHtml()}
+      ${primera ? '<label>Nombre</label><input id="l-nombre" autocomplete="name">' : ''}
+      <label>Usuario</label><input id="l-mail" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <label>Clave</label><input id="l-pass" type="password" autocomplete="${primera ? 'new-password' : 'current-password'}">
+      <div style="margin-top:14px"><button style="width:100%" id="l-go">${primera ? 'Crear cuenta' : 'Entrar'}</button></div>
+      ${primera ? '' : '<p style="text-align:center;margin:12px 0 0"><button class="sec sm" id="l-rec">Olvidé mi clave</button> <button class="sec sm" id="l-first">Primera vez</button></p>'}
+      ${primera ? '<p style="text-align:center;margin:12px 0 0"><button class="sec sm" id="l-back">Volver</button></p>' : ''}
+    </div></div>`;
+  $('#l-go').onclick = async () => {
+    const usuario = limpiarUsuario($('#l-mail').value), email = usuario ? correoDe(usuario) : '', password = $('#l-pass').value;
+    if (!usuario || password.length < 6) { setAviso('Escribe el usuario y una clave de mínimo 6 caracteres.'); return vistaLogin(primera); }
+    setAviso(null);
+    if (primera) {
+      const nombre = $('#l-nombre').value.trim() || usuario;
+      const { error } = await sb.auth.signUp({ email, password, options: { data: { nombre, usuario } } });
+      if (error) { setAviso(error.message); return vistaLogin(true); }
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) { setAviso('Usuario o clave incorrectos.'); return vistaLogin(); }
+    }
+    await cargarYo();
+  };
+  if (!primera) {
+    $('#l-first').onclick = () => { setAviso(null); vistaLogin(true); };
+    $('#l-rec').onclick = async () => {
+      const email = limpiarUsuario($('#l-mail').value);
+      if (!esCorreoReal(email)) { setAviso('La recuperación por correo solo funciona si tu usuario es un correo real. Si no, pídele al administrador que te cree el usuario de nuevo.'); return vistaLogin(); }
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
+      setAviso(error ? error.message : 'Te enviamos un correo para recuperar la clave.', error ? 'err' : 'ok'); vistaLogin();
+    };
+  } else $('#l-back').onclick = () => { setAviso(null); vistaLogin(); };
+}
+
+function tabsVisibles() {
+  const t = [];
+  if (can('prestamos', 'ver')) t.push('prestamos');
+  if (can('reportes', 'ver')) t.push('estadisticas');
+  if (can('personas', 'ver')) t.push('personas');
+  if (me && me.es_admin) t.push('roles', 'usuarios', 'config');
+  return t;
+}
+const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Personas', estadisticas: 'Estadísticas', roles: 'Roles', usuarios: 'Usuarios', config: 'Ajustes', cuenta: 'Mi clave' };
+
+function render() {
+  const t = tabsVisibles();
+  $('#app').innerHTML = `
+    <header><div><b>${esc(negocio.nombre)}</b><small>${esc(me.nombre)}${me.es_admin ? ' · Administrador' : ''}</small></div><button class="sec sm" style="color:#fff;border-color:#ffffff55" id="clave">Clave</button> <button class="sec sm" style="color:#fff;border-color:#ffffff55" id="salir">Salir</button></header>
+    <main id="vista"></main>
+    <nav>${t.map(x => `<button data-t="${x}" class="${x === tab ? 'on' : ''}">${TAB_NOMBRE[x]}</button>`).join('')}</nav>`;
+  $('#salir').onclick = async () => { await sb.auth.signOut(); me = null; cuentaSel = null; setAviso(null); vistaLogin(); };
+  $('#clave').onclick = () => { tab = 'cuenta'; setAviso(null); render(); };
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.t; cuentaSel = null; setAviso(null); render(); });
+  if (!t.length && tab !== 'cuenta') { $('#vista').innerHTML = '<div class="card">Tu rol aún no tiene permisos asignados.</div>'; return; }
+  ({ prestamos: vPrestamos, estadisticas: vEstadisticas, personas: vPersonas, roles: vRoles, usuarios: vUsuarios, config: vConfig, cuenta: vCuenta })[tab]();
+}
+
+/* ---------------- PERSONAS ---------------- */
+async function vPersonas(filtro = '') {
+  const v = $('#vista');
+  v.innerHTML = '<p class="mute">Cargando…</p>';
+  const { data, error } = await sb.from('personas').select('*').order('creado_en', { ascending: false }).limit(300);
+  if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  const f = filtro.toLowerCase();
+  const lista = (data || []).filter(p => !f || (p.nombre + p.cedula + p.telefono).toLowerCase().includes(f));
+  v.innerHTML = `${avisoHtml()}
+    ${can('personas', 'crear') ? `<div class="card"><h2>Registrar persona</h2>
+      <label>Cédula *</label><input id="p-ced" inputmode="numeric">
+      <label>Nombre completo *</label><input id="p-nom">
+      <label>Teléfono / WhatsApp *</label><input id="p-tel" inputmode="tel">
+      <label>Tipo</label><select id="p-tipo"><option value="cliente">Cliente</option><option value="fiador">Fiador / codeudor</option><option value="referencia">Referencia</option></select>
+      <label>Dirección</label><input id="p-dir">
+      <label>Barrio o zona de cobro</label><input id="p-bar">
+      <label>Notas</label><textarea id="p-not" rows="2"></textarea>
+      <label style="display:flex;align-items:center;color:var(--ink)"><input type="checkbox" id="p-con">Autoriza el tratamiento de sus datos personales</label>
+      <div style="margin-top:12px"><button id="p-save">Guardar</button></div></div>` : ''}
+    <div class="card"><input id="p-q" placeholder="Buscar por nombre, cédula o teléfono" value="${esc(filtro)}">
+      <div style="margin-top:8px">${lista.length ? lista.map(p => `
+        <div class="item ${p.activo ? '' : 'off'}">
+          <div class="row"><div><b>${esc(p.nombre)}</b><span class="tag">${esc(p.tipo)}</span>${p.activo ? '' : '<span class="tag">anulada</span>'}</div>
+          ${p.activo && can('personas', 'anular') ? `<button class="sec sm" data-anular="${p.id}">Anular</button>` : ''}</div>
+          <div class="mute">CC ${esc(p.cedula)} · ${esc(p.telefono)}${p.barrio ? ' · ' + esc(p.barrio) : ''}</div>
+          ${p.direccion ? `<div class="mute">${esc(p.direccion)}</div>` : ''}
+          ${p.activo ? '' : `<div class="mute">Motivo: ${esc(p.motivo_anulacion)}</div>`}
+        </div>`).join('') : '<p class="mute">Sin resultados.</p>'}</div></div>`;
+  $('#p-q').oninput = e => { clearTimeout(window._t); window._t = setTimeout(() => vPersonas(e.target.value), 300); };
+  if ($('#p-save')) $('#p-save').onclick = async () => {
+    const r = { cedula: $('#p-ced').value.trim(), nombre: $('#p-nom').value.trim(), telefono: $('#p-tel').value.trim(),
+      tipo: $('#p-tipo').value, direccion: $('#p-dir').value.trim() || null, barrio: $('#p-bar').value.trim() || null,
+      notas: $('#p-not').value.trim() || null, consentimiento: $('#p-con').checked };
+    if (!r.cedula || !r.nombre || !r.telefono) { setAviso('Cédula, nombre y teléfono son obligatorios.'); return vPersonas(); }
+    if (r.consentimiento) r.consentimiento_fecha = new Date().toISOString();
+    const { error } = await sb.from('personas').insert(r);
+    setAviso(error ? (error.code === '23505' ? 'Ya existe una persona con esa cédula.' : error.message) : 'Persona registrada.', error ? 'err' : 'ok');
+    vPersonas();
+  };
+  document.querySelectorAll('[data-anular]').forEach(b => b.onclick = async () => {
+    const motivo = (prompt('Motivo de la anulación:') || '').trim();
+    if (!motivo) return;
+    const { error } = await sb.from('personas').update({ activo: false, motivo_anulacion: motivo }).eq('id', b.dataset.anular);
+    setAviso(error ? error.message : 'Registro anulado.', error ? 'err' : 'ok'); vPersonas();
+  });
+}
+
+/* ---------------- ROLES ---------------- */
+async function vRoles() {
+  const v = $('#vista');
+  v.innerHTML = '<p class="mute">Cargando…</p>';
+  const { data: roles, error } = await sb.from('roles').select('*').order('nombre');
+  if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  if (rolSel && !roles.find(r => r.id === rolSel)) rolSel = null;
+  let marcados = new Set();
+  if (rolSel) {
+    const { data: pm } = await sb.from('permisos').select('modulo,accion').eq('role_id', rolSel);
+    (pm || []).forEach(x => marcados.add(x.modulo + ':' + x.accion));
+  }
+  const rol = roles.find(r => r.id === rolSel);
+  v.innerHTML = `${avisoHtml()}
+    <div class="card"><h2>Roles</h2>
+      <p class="mute">El administrador tiene todos los permisos y no se puede modificar. Aquí creas los demás roles.</p>
+      <div class="row"><input id="r-nom" placeholder="Nombre del rol (ej. Cobrador)"><button id="r-add">Crear</button></div>
+      <div style="margin-top:8px">${roles.length ? roles.map(r => `
+        <div class="item ${r.activo ? '' : 'off'}"><div class="row">
+          <div><b>${esc(r.nombre)}</b>${r.activo ? '' : '<span class="tag">inactivo</span>'}</div>
+          <div><button class="sec sm" data-sel="${r.id}">Permisos</button> <button class="sec sm" data-act="${r.id}" data-v="${r.activo}">${r.activo ? 'Desactivar' : 'Activar'}</button></div>
+        </div></div>`).join('') : '<p class="mute">Aún no hay roles.</p>'}</div></div>
+    ${rol ? `<div class="card"><h2>Permisos de «${esc(rol.nombre)}»</h2>
+      <table class="matrix"><thead><tr><th></th>${ACCIONES.map(a => `<th>${a}</th>`).join('')}</tr></thead><tbody>
+      ${MODULOS.map(([m, n]) => `<tr><td>${n}</td>${ACCIONES.map(a => `<td><input type="checkbox" data-m="${m}" data-a="${a}" ${marcados.has(m + ':' + a) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+      <div style="margin-top:12px"><button id="r-save">Guardar permisos</button></div></div>` : ''}`;
+  $('#r-add').onclick = async () => {
+    const nombre = $('#r-nom').value.trim();
+    if (!nombre) return;
+    const { data, error } = await sb.from('roles').insert({ nombre }).select().single();
+    if (error) setAviso(error.code === '23505' ? 'Ya existe un rol con ese nombre.' : error.message); else { rolSel = data.id; setAviso('Rol creado. Marca sus permisos.', 'ok'); }
+    vRoles();
+  };
+  document.querySelectorAll('[data-sel]').forEach(b => b.onclick = () => { rolSel = b.dataset.sel; setAviso(null); vRoles(); });
+  document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('roles').update({ activo: b.dataset.v !== 'true' }).eq('id', b.dataset.act);
+    setAviso(error ? error.message : null); vRoles();
+  });
+  if ($('#r-save')) $('#r-save').onclick = async () => {
+    const nuevos = [...document.querySelectorAll('.matrix input:checked')].map(i => ({ role_id: rolSel, modulo: i.dataset.m, accion: i.dataset.a }));
+    const del = await sb.from('permisos').delete().eq('role_id', rolSel);
+    if (del.error) { setAviso(del.error.message); return vRoles(); }
+    if (nuevos.length) { const ins = await sb.from('permisos').insert(nuevos); if (ins.error) { setAviso(ins.error.message); return vRoles(); } }
+    setAviso('Permisos guardados.', 'ok'); vRoles();
+  };
+}
+
+/* ---------------- USUARIOS ---------------- */
+async function vUsuarios() {
+  const v = $('#vista');
+  v.innerHTML = '<p class="mute">Cargando…</p>';
+  const [{ data: us, error }, { data: roles }] = await Promise.all([
+    sb.from('perfiles').select('*').order('creado_en'), sb.from('roles').select('id,nombre').eq('activo', true).order('nombre')]);
+  if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  const opciones = sel => '<option value="">Sin rol</option>' + (roles || []).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
+  v.innerHTML = `${avisoHtml()}
+    <div class="card"><h2>Nuevo usuario</h2>
+      <label>Nombre</label><input id="u-nom">
+      <label>Usuario</label><input id="u-mail" autocapitalize="none" spellcheck="false" placeholder="Ej: maria, cobrador1">
+      <label>Clave inicial</label><input id="u-pass" type="text" placeholder="Mínimo 6 caracteres">
+      <label>Rol</label><select id="u-rol">${opciones('')}</select>
+      <div style="margin-top:12px"><button id="u-add">Crear usuario</button></div></div>
+    <div class="card"><h2>Usuarios</h2>${us.map(u => `
+      <div class="item ${u.activo ? '' : 'off'}">
+        <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">@${esc(u.usuario || '')}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : ''}${u.activo ? '' : '<span class="tag">inactivo</span>'}</div></div>
+        ${u.es_admin ? '' : `<div class="row" style="margin-top:8px"><select data-rol="${u.id}">${opciones(u.role_id)}</select>
+          <button class="sec sm" data-uact="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button></div>`}
+      </div>`).join('')}</div>`;
+  $('#u-add').onclick = async () => {
+    const nombre = $('#u-nom').value.trim(), usuario = limpiarUsuario($('#u-mail').value), email = usuario ? correoDe(usuario) : '', password = $('#u-pass').value, rol = $('#u-rol').value;
+    if (!nombre || !usuario || password.length < 6 || !rol) { setAviso('Completa nombre, usuario, clave (mínimo 6) y rol.'); return vUsuarios(); }
+    // Cliente aparte para no cerrar la sesión del administrador
+    const aux = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data, error } = await aux.auth.signUp({ email, password, options: { data: { nombre, usuario } } });
+    if (error || !data.user) { setAviso(error ? error.message : 'No se pudo crear el usuario.'); return vUsuarios(); }
+    const up = await sb.from('perfiles').update({ role_id: rol, activo: true, nombre }).eq('id', data.user.id);
+    setAviso(up.error ? up.error.message : 'Usuario creado. Entrégale su usuario y clave.', up.error ? 'err' : 'ok'); vUsuarios();
+  };
+  document.querySelectorAll('[data-rol]').forEach(s => s.onchange = async () => {
+    const { error } = await sb.from('perfiles').update({ role_id: s.value || null }).eq('id', s.dataset.rol);
+    setAviso(error ? error.message : 'Rol actualizado.', error ? 'err' : 'ok'); vUsuarios();
+  });
+  document.querySelectorAll('[data-uact]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('perfiles').update({ activo: b.dataset.v !== 'true' }).eq('id', b.dataset.uact);
+    setAviso(error ? error.message : null); vUsuarios();
+  });
+}
+
+/* ======================= PRÉSTAMOS ======================= */
+const hoy = () => new Date().toLocaleDateString('en-CA');
+const money = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO');
+const fdate = s => s ? String(s).slice(0, 10).split('-').reverse().join('/') : '';
+const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+const entero = s => Number(String(s ?? '').replace(/\D/g, '')) || 0;
+const decimal = s => Number(String(s ?? '').replace(',', '.'));
+const pad = n => String(n).padStart(5, '0');
+const nom = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '');
+const FREQ = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual' };
+const PERIODOS_MES = { semanal: 4, quincenal: 2, mensual: 1 };
+let cuentaSel = null, filtroPres = 'todos', vistaPres = 'tabla';
+
+function calcCuenta(c) {
+  const cu = (c.cuotas || []).slice().sort((a, b) => a.numero - b.numero);
+  const pagado = cu.reduce((s, q) => s + Number(q.pagado), 0);
+  const saldo = c.estado === 'anulado' ? 0 : Math.max(0, Number(c.total) - Number(c.descuento || 0) - pagado);
+  const h = hoy();
+  const sinPagar = q => Number(q.pagado) < Number(q.valor);
+  const atrasadas = c.estado === 'vigente' ? cu.filter(q => q.fecha_vencimiento < h && sinPagar(q)) : [];
+  const vencido = Math.min(saldo, atrasadas.reduce((s, q) => s + Number(q.valor) - Number(q.pagado), 0));
+  const proxima = c.estado === 'vigente' ? cu.find(sinPagar) || null : null;
+  return { cu, pagado, saldo, atrasadas, vencido, proxima, mora: atrasadas.length > 0,
+    diasMora: atrasadas.length ? diasEntre(atrasadas[0].fecha_vencimiento, h) : 0 };
+}
+const estadoCuenta = (c, k) => c.estado === 'anulado' ? ['Anulado', ''] : c.estado === 'pagado' ? ['Paz y salvo', 'ok'] : k.mora ? ['En mora', 'bad'] : ['Al día', 'ok'];
+// Lo que el cliente debe pagar ahora: lo vencido si está en mora, o la próxima cuota.
+function cuotaAPagar(k, c) {
+  if (c.estado !== 'vigente') return null;
+  if (k.mora) return { valor: k.vencido, fecha: k.atrasadas[0].fecha_vencimiento, vencida: true };
+  if (k.proxima) return { valor: Math.min(k.saldo, Number(k.proxima.valor) - Number(k.proxima.pagado)), fecha: k.proxima.fecha_vencimiento, vencida: false };
+  return null;
+}
+const NOMBRES_FILTRO = { todos: 'Todos', vigentes: 'Vigentes', mora: 'En mora', pagados: 'Paz y salvo', anulados: 'Anulados' };
+
+function tablaPrestamos(lista) {
+  const filas = lista.map(c => ({ c, a: cuotaAPagar(c.k, c) }));
+  const totPag = lista.reduce((s, c) => s + c.k.pagado, 0), totSal = lista.reduce((s, c) => s + c.k.saldo, 0), totCuo = filas.reduce((s, f) => s + (f.a ? f.a.valor : 0), 0);
+  return `<div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Cliente</th><th>Pagado</th><th>Saldo</th><th>Cuota a pagar</th></tr></thead><tbody>
+    ${filas.map(({ c, a }) => `<tr data-c="${c.id}" style="cursor:pointer"><td><b>${esc(c.personas?.nombre || '—')}</b><div class="mute" style="font-size:11px">#${pad(c.consecutivo)}</div>${tagHtml(estadoCuenta(c, c.k))}</td><td>${money(c.k.pagado)}</td><td><b>${money(c.k.saldo)}</b></td><td>${a ? `<b class="${a.vencida ? 'bad-t' : ''}">${money(a.valor)}</b><br><span class="mute">${a.vencida ? 'desde ' : 'vence '}${fdate(a.fecha).slice(0, 5)}</span>` : '—'}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Total (${lista.length})</td><td>${money(totPag)}</td><td>${money(totSal)}</td><td>${money(totCuo)}</td></tr></tfoot></table></div>`;
+}
+function tarjetasPrestamos(lista) {
+  return lista.map(c => `
+    <div class="item" data-c="${c.id}" style="cursor:pointer">
+      <div class="row"><div><b>#${pad(c.consecutivo)} · ${esc(c.personas?.nombre || '—')}</b> ${tagHtml(estadoCuenta(c, c.k))}</div><b>${money(c.k.saldo)}</b></div>
+      <div class="mute">${c.estado === 'vigente'
+        ? (c.k.mora ? `${c.k.atrasadas.length} cuota(s) vencida(s) · ${c.k.diasMora} días de atraso · debe ${money(c.k.vencido)}`
+          : c.k.proxima ? `Próxima cuota: ${fdate(c.k.proxima.fecha_vencimiento)} · ${money(Number(c.k.proxima.valor) - Number(c.k.proxima.pagado))}` : '')
+        : `Capital ${money(c.capital)} · ${c.num_cuotas} cuotas`}</div>
+    </div>`).join('');
+}
+const tagHtml = ([t, cls]) => `<span class="tag ${cls}">${t}</span>`;
+
+async function vPrestamos() {
+  if (cuentaSel) return vCuenta();
+  const v = $('#vista');
+  v.innerHTML = '<p class="mute">Cargando…</p>';
+  const [rc, rp] = await Promise.all([
+    sb.from('cuentas').select('*,personas(nombre,cedula,telefono),cuotas(numero,fecha_vencimiento,valor,pagado)').order('creado_en', { ascending: false }).limit(500),
+    can('prestamos', 'crear') ? sb.from('personas').select('id,nombre,cedula').eq('activo', true).eq('tipo', 'cliente').order('nombre') : Promise.resolve({ data: [] })
+  ]);
+  if (rc.error) { v.innerHTML = `<div class="msg err">${esc(rc.error.message)}</div>`; return; }
+  const clientes = rp.data || [];
+  const cuentas = rc.data.map(c => ({ ...c, k: calcCuenta(c) }));
+  const vig = cuentas.filter(c => c.estado === 'vigente');
+  const h = hoy();
+  const cartera = vig.reduce((s, c) => s + c.k.saldo, 0);
+  const vencido = vig.reduce((s, c) => s + c.k.vencido, 0);
+  const cobroHoy = vig.reduce((s, c) => s + c.k.cu.filter(q => q.fecha_vencimiento === h).reduce((t, q) => t + Math.max(0, Number(q.valor) - Number(q.pagado)), 0), 0);
+  let lista = cuentas.filter(c => ({
+    todos: c.estado !== 'anulado', vigentes: c.estado === 'vigente', mora: c.k.mora,
+    pagados: c.estado === 'pagado', anulados: c.estado === 'anulado' })[filtroPres]);
+  if (filtroPres === 'mora') lista.sort((a, b) => b.k.diasMora - a.k.diasMora);
+
+  v.innerHTML = `${avisoHtml()}
+    <div class="stats">
+      <div class="stat"><span>Cartera por cobrar</span><b>${money(cartera)}</b></div>
+      <div class="stat"><span>Vencido</span><b class="${vencido ? 'bad-t' : ''}">${money(vencido)}</b></div>
+      <div class="stat"><span>Para cobrar hoy</span><b>${money(cobroHoy)}</b></div>
+      <div class="stat"><span>Préstamos vigentes</span><b>${vig.length}</b></div>
+    </div>
+    ${can('prestamos', 'crear') ? `<details class="card"><summary><b>Nuevo préstamo</b></summary>
+      ${clientes.length ? '' : '<p class="mute">Primero registra al cliente en la pestaña Personas.</p>'}
+      <label>Cliente</label><select id="n-per"><option value="">Selecciona…</option>${clientes.map(p => `<option value="${p.id}">${esc(p.nombre)} · ${esc(p.cedula)}</option>`).join('')}</select>
+      <label>Capital prestado ($)</label><input id="n-cap" inputmode="numeric" placeholder="1000000">
+      <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="20">
+      <label>Frecuencia de pago</label><select id="n-fre"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option></select>
+      <label>Número de cuotas</label><input id="n-cuo" inputmode="numeric" value="3">
+      <label>Fecha de desembolso</label><input id="n-fec" type="date" value="${h}">
+      <div class="msg ok" id="n-prev"></div>
+      <div id="n-msg"></div>
+      <button id="n-go">Crear préstamo</button></details>` : ''}
+    <div class="card">
+      <div class="row"><select id="f-pres" style="flex:1">${Object.entries(NOMBRES_FILTRO).map(([val, t]) => `<option value="${val}" ${val === filtroPres ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <select id="v-pres" style="flex:0 0 112px"><option value="tabla" ${vistaPres === 'tabla' ? 'selected' : ''}>Tabla</option><option value="tarjetas" ${vistaPres === 'tarjetas' ? 'selected' : ''}>Tarjetas</option></select></div>
+      ${can('prestamos', 'exportar') && lista.length ? '<p style="margin:10px 0 0"><button class="sec sm" id="b-rep">Descargar estado de cartera (PDF)</button></p>' : ''}
+      <div style="margin-top:8px">${lista.length ? (vistaPres === 'tabla' ? tablaPrestamos(lista) : tarjetasPrestamos(lista)) : '<p class="mute">No hay préstamos en esta vista.</p>'}</div></div>`;
+
+  $('#f-pres').onchange = e => { filtroPres = e.target.value; vPrestamos(); };
+  $('#v-pres').onchange = e => { vistaPres = e.target.value; vPrestamos(); };
+  if ($('#b-rep')) $('#b-rep').onclick = () => generar(() => docCartera(lista, NOMBRES_FILTRO[filtroPres]));
+  document.querySelectorAll('[data-c]').forEach(el => el.onclick = () => { cuentaSel = el.dataset.c; setAviso(null); vPrestamos(); });
+
+  if ($('#n-go')) {
+    const prev = () => {
+      const cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, n = entero($('#n-cuo').value);
+      if (!cap || !n || isNaN(tasa)) { $('#n-prev').innerHTML = 'Escribe capital, tasa y cuotas para ver el cálculo.'; return; }
+      const meses = n / PERIODOS_MES[fre], inte = Math.round(cap * tasa / 100 * meses), tot = cap + inte;
+      $('#n-prev').innerHTML = `Interés total: <b>${money(inte)}</b> (${tasa}% × ${Number.isInteger(meses) ? meses : meses.toFixed(2)} ${meses === 1 ? 'mes' : 'meses'})<br>Total a pagar: <b>${money(tot)}</b><br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
+    };
+    ['n-cap', 'n-tasa', 'n-fre', 'n-cuo'].forEach(id => $('#' + id).oninput = prev);
+    prev();
+    $('#n-go').onclick = async () => {
+      const per = $('#n-per').value, cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, cuo = entero($('#n-cuo').value), fec = $('#n-fec').value;
+      if (!per || !cap || !cuo || !fec || isNaN(tasa)) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, capital, tasa, cuotas y fecha.</div>'; return; }
+      $('#n-go').disabled = true;
+      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec });
+      if (error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; $('#n-go').disabled = false; return; }
+      cuentaSel = data; setAviso('Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
+    };
+  }
+}
+
+async function vCuenta() {
+  const v = $('#vista');
+  v.innerHTML = '<p class="mute">Cargando…</p>';
+  const [rc, rp] = await Promise.all([
+    sb.from('cuentas').select('*,personas(nombre,cedula,telefono,direccion),cuotas(*)').eq('id', cuentaSel).single(),
+    sb.from('pagos').select('*').eq('cuenta_id', cuentaSel).order('consecutivo')
+  ]);
+  if (rc.error) { cuentaSel = null; setAviso(rc.error.message); return vPrestamos(); }
+  const c = rc.data, pagos = rp.data || [], k = calcCuenta(c), per = c.personas || {};
+  const vigente = c.estado === 'vigente', h = hoy();
+  const estCuota = q => Number(q.pagado) >= Number(q.valor) ? ['Pagada', 'ok'] : c.estado === 'pagado' ? ['Cubierta', 'ok'] : q.fecha_vencimiento < h ? ['Vencida', 'bad'] : Number(q.pagado) > 0 ? ['Parcial', ''] : (k.proxima && k.proxima.numero === q.numero ? ['A pagar', 'ok'] : ['Pendiente', '']);
+  const pendProx = k.proxima ? Number(k.proxima.valor) - Number(k.proxima.pagado) : '';
+  const verDocs = can('prestamos', 'exportar'), verRec = can('pagos', 'exportar');
+
+  v.innerHTML = `${avisoHtml()}
+    <p style="margin:0 0 10px"><button class="sec sm" id="back">← Volver</button></p>
+    <div class="card">
+      <div class="row"><h2 style="margin:0">#${pad(c.consecutivo)} · ${esc(per.nombre || '—')}</h2>${tagHtml(estadoCuenta(c, k))}</div>
+      <div class="mute">CC ${esc(per.cedula || '')}${per.telefono ? ' · ' + esc(per.telefono) : ''}</div>
+      <table class="matrix" style="margin-top:10px">
+        <tr><td>Capital</td><td style="text-align:right">${money(c.capital)}</td></tr>
+        <tr><td>Interés (${Number(c.tasa_mensual)}% mensual fijo)</td><td style="text-align:right">${money(c.interes_total)}</td></tr>
+        <tr><td>Total a pagar</td><td style="text-align:right"><b>${money(c.total)}</b></td></tr>
+        <tr><td>Pagado</td><td style="text-align:right">${money(k.pagado)}</td></tr>
+        ${Number(c.descuento) > 0 ? `<tr><td>Descuento</td><td style="text-align:right">${money(c.descuento)}</td></tr>` : ''}
+        <tr><td><b>Saldo pendiente</b></td><td style="text-align:right"><b>${money(k.saldo)}</b></td></tr>
+        ${(() => { const a = cuotaAPagar(k, c); return a ? `<tr><td>${a.vencida ? 'Cuota vencida a pagar' : 'Cuota a pagar'}</td><td style="text-align:right"><b class="${a.vencida ? 'bad-t' : ''}">${money(a.valor)}</b><br><span class="mute">${a.vencida ? 'vencida desde' : 'vence'} ${fdate(a.fecha)}</span></td></tr>` : c.estado === 'pagado' ? '<tr><td>Estado</td><td style="text-align:right"><b>Paz y salvo</b></td></tr>' : ''; })()}
+      </table>
+      <p class="mute" style="margin:8px 0 0">${c.num_cuotas} cuotas ${FREQ[c.frecuencia].toLowerCase()}es · desembolso ${fdate(c.fecha_desembolso)}${c.estado === 'anulado' ? ` · Anulado: ${esc(c.motivo_anulacion)}` : ''}</p>
+      ${c.descuento_motivo ? `<p class="mute" style="margin:4px 0 0">Descuento: ${esc(c.descuento_motivo)}</p>` : ''}
+    </div>
+
+    ${vigente && can('pagos', 'crear') ? `<div class="card"><h2>Registrar pago</h2>
+      <label>Valor ($)</label><input id="pg-monto" inputmode="numeric" value="${pendProx}">
+      <label>Fecha</label><input id="pg-fecha" type="date" value="${h}">
+      <label>Forma de pago</label><select id="pg-met"><option>efectivo</option><option>transferencia</option><option>otro</option></select>
+      <label>Nota (opcional)</label><input id="pg-nota">
+      <div style="margin-top:12px"><button id="pg-go">Registrar pago</button></div></div>` : ''}
+
+    <div class="card"><h2>Cuotas</h2>
+      <table class="matrix"><thead><tr><th>#</th><th>Vence</th><th>Cuota</th><th>Pagado</th><th></th></tr></thead><tbody>
+      ${k.cu.map(q => `<tr><td>${q.numero}</td><td>${fdate(q.fecha_vencimiento)}</td><td>${money(q.valor)}</td><td>${money(q.pagado)}</td><td>${tagHtml(estCuota(q))}</td></tr>`).join('')}
+      </tbody></table></div>
+
+    <div class="card"><h2>Pagos</h2>
+      ${pagos.length ? pagos.map(p => `<div class="item ${p.estado === 'anulado' ? 'off' : ''}">
+        <div class="row"><div><b>Recibo #${pad(p.consecutivo)}</b> · ${money(p.monto)}${p.estado === 'anulado' ? '<span class="tag">anulado</span>' : ''}</div>
+          <div>${p.estado === 'activo' && verRec ? `<button class="sec sm" data-rec="${p.id}">Recibo PDF</button> ` : ''}${p.estado === 'activo' && can('pagos', 'anular') ? `<button class="sec sm" data-anpago="${p.id}">Anular</button>` : ''}</div></div>
+        <div class="mute">${fdate(p.fecha)} · ${esc(p.metodo)}${p.nota ? ' · ' + esc(p.nota) : ''}${p.estado === 'anulado' ? ' · Motivo: ' + esc(p.motivo_anulacion) : ''}</div></div>`).join('') : '<p class="mute">Sin pagos registrados.</p>'}</div>
+
+    ${verDocs && c.estado !== 'anulado' ? `<div class="card"><h2>Documentos</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button data-doc="amort">Tabla de amortización</button>
+        ${vigente ? '<button data-doc="cobro">Nota de cobro</button>' : ''}
+        ${c.estado === 'pagado' ? '<button data-doc="paz">Paz y salvo</button>' : ''}
+      </div></div>` : ''}
+
+    ${vigente && (me.es_admin || can('prestamos', 'anular')) ? `<div class="card"><h2>Administración</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${me.es_admin ? '<button class="sec" id="b-desc">Aplicar descuento</button>' : ''}
+        ${can('prestamos', 'anular') ? '<button class="bad" id="b-anular">Anular préstamo</button>' : ''}
+      </div></div>` : ''}`;
+
+  $('#back').onclick = () => { cuentaSel = null; setAviso(null); vPrestamos(); };
+  const fin = (error, ok) => { setAviso(error ? error.message : ok, error ? 'err' : 'ok'); vCuenta(); };
+
+  if ($('#pg-go')) $('#pg-go').onclick = async () => {
+    const monto = entero($('#pg-monto').value);
+    if (!monto) { setAviso('Escribe el valor del pago.'); return vCuenta(); }
+    if (!confirm(`¿Registrar un pago de ${money(monto)} de ${per.nombre}?`)) return;
+    $('#pg-go').disabled = true;
+    const { error } = await sb.rpc('registrar_pago', { p_cuenta: c.id, p_monto: monto, p_fecha: $('#pg-fecha').value || h, p_metodo: $('#pg-met').value, p_nota: $('#pg-nota').value.trim() || null });
+    fin(error, 'Pago registrado. Ya puedes descargar el recibo.');
+  };
+  document.querySelectorAll('[data-anpago]').forEach(b => b.onclick = async () => {
+    const motivo = (prompt('Motivo de la anulación del pago:') || '').trim();
+    if (!motivo) return;
+    b.disabled = true;
+    const { error } = await sb.rpc('anular_pago', { p_pago: b.dataset.anpago, p_motivo: motivo });
+    fin(error, 'Pago anulado.');
+  });
+  if ($('#b-desc')) $('#b-desc').onclick = async () => {
+    const sug = c.cuotas.filter(q => q.fecha_vencimiento > h && Number(q.pagado) === 0).reduce((s, q) => s + Number(q.interes_parte), 0);
+    const m = entero(prompt(`Valor del descuento.\nSugerido: ${money(sug)} (intereses de las cuotas que aún no vencen).\nMáximo: ${money(k.saldo)}`, String(sug || '')));
+    if (!m) return;
+    const motivo = (prompt('Motivo del descuento (queda registrado):') || '').trim();
+    if (!motivo) return;
+    $('#b-desc').disabled = true;
+    const { error } = await sb.rpc('aplicar_descuento', { p_cuenta: c.id, p_monto: m, p_motivo: motivo });
+    fin(error, 'Descuento aplicado.');
+  };
+  if ($('#b-anular')) $('#b-anular').onclick = async () => {
+    const motivo = (prompt('Motivo de la anulación del préstamo:') || '').trim();
+    if (!motivo) return;
+    $('#b-anular').disabled = true;
+    const { error } = await sb.rpc('anular_prestamo', { p_cuenta: c.id, p_motivo: motivo });
+    fin(error, 'Préstamo anulado.');
+  };
+  document.querySelectorAll('[data-doc]').forEach(b => b.onclick = () => generar(() =>
+    ({ amort: docAmortizacion, cobro: docCobro, paz: docPazYSalvo })[b.dataset.doc](c, k, per, pagos)));
+  document.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => generar(() =>
+    docRecibo(c, k, per, pagos.find(p => p.id === b.dataset.rec))));
+}
+
+/* ======================= DOCUMENTOS (PDF) ======================= */
+function generar(fn) {
+  try {
+    if (!window.jspdf) throw new Error('No se cargó el generador de PDF. Revisa tu conexión a internet.');
+    fn();
+  } catch (e) { alert('No se pudo generar el documento: ' + e.message); }
+}
+
+function letras(n) {
+  n = Math.floor(Math.abs(n));
+  if (n === 0) return 'cero';
+  if (n >= 1e9) return String(n);
+  const U = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós', 'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete', 'veintiocho', 'veintinueve'];
+  const D = ['', '', '', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+  const C = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+  const apoc = s => s.replace(/veintiuno$/, 'veintiún').replace(/uno$/, 'un');
+  const m1000 = x => {
+    if (x === 100) return 'cien';
+    const c = Math.floor(x / 100), r = x % 100;
+    let s = c ? C[c] + (r ? ' ' : '') : '';
+    if (r < 30) s += U[r]; else { const d = Math.floor(r / 10), u = r % 10; s += D[d] + (u ? ' y ' + U[u] : ''); }
+    return s;
+  };
+  const mill = Math.floor(n / 1e6), mil = Math.floor((n % 1e6) / 1e3), resto = n % 1e3, out = [];
+  if (mill) out.push(mill === 1 ? 'un millón' : apoc(m1000(mill)) + ' millones');
+  if (mil) out.push(mil === 1 ? 'mil' : apoc(m1000(mil)) + ' mil');
+  if (resto) out.push(m1000(resto));
+  return out.join(' ');
+}
+const enLetras = n => { const t = letras(n); return t.charAt(0).toUpperCase() + t.slice(1) + (Math.floor(n) % 1e6 === 0 && n >= 1e6 ? ' de pesos' : ' pesos'); };
+
+function nuevoDoc(titulo) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  doc.setTextColor(0);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text(negocio.nombre || '', 108, 18, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  const lin = [negocio.nit ? 'NIT / CC ' + negocio.nit : '', [negocio.direccion, negocio.ciudad].filter(Boolean).join(' - '), negocio.telefono ? 'Tel. ' + negocio.telefono : ''].filter(Boolean);
+  lin.forEach((t, i) => doc.text(t, 108, 24 + i * 4.5, { align: 'center' }));
+  const y = 24 + lin.length * 4.5 + 3;
+  doc.setDrawColor(20, 83, 45); doc.setLineWidth(0.6); doc.line(15, y, 201, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.text(titulo, 108, y + 9, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  return { doc, y: y + 18 };
+}
+const kv = (doc, y, pares) => {
+  pares.forEach(([clave, val]) => {
+    doc.setFont('helvetica', 'bold'); doc.text(clave + ':', 15, y);
+    doc.setFont('helvetica', 'normal');
+    const l = doc.splitTextToSize(String(val), 135); doc.text(l, 62, y); y += 5.8 * l.length;
+  });
+  return y + 2;
+};
+const parrafo = (doc, y, t) => { const l = doc.splitTextToSize(t, 186); doc.text(l, 15, y); return y + 5.5 * l.length + 3; };
+const negrita = (doc, y, t) => { doc.setFont('helvetica', 'bold'); doc.text(t, 15, y); doc.setFont('helvetica', 'normal'); return y + 6; };
+const tablaEstilo = { styles: { fontSize: 9, halign: 'right' }, headStyles: { fillColor: [20, 83, 45], halign: 'right' }, footStyles: { fillColor: [230, 238, 233], textColor: 0 }, margin: { left: 15, right: 15 } };
+
+function firmaYGuardar(doc, y, archivo) {
+  if (y > 235) { doc.addPage(); y = 30; }
+  y += 22;
+  doc.setDrawColor(0); doc.setLineWidth(0.3); doc.line(15, y, 90, y);
+  doc.setFontSize(10); doc.text(negocio.representante || 'Firma autorizada', 15, y + 5);
+  doc.setFontSize(9); doc.text(negocio.nombre || '', 15, y + 10);
+  guardarPie(doc, archivo);
+}
+function guardarPie(doc, archivo) {
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(`Documento generado el ${new Date().toLocaleString('es-CO')} · ${negocio.nombre || ''}`, 108, 272, { align: 'center' });
+  }
+  doc.save(archivo);
+}
+
+function docAmortizacion(c, k, per) {
+  const { doc, y } = nuevoDoc('TABLA DE AMORTIZACIÓN');
+  let yy = kv(doc, y, [
+    ['Obligación No.', pad(c.consecutivo)], ['Cliente', per.nombre || ''], ['Cédula', per.cedula || ''],
+    ['Desembolso', fdate(c.fecha_desembolso)], ['Capital', money(c.capital)],
+    ['Interés', `${Number(c.tasa_mensual)}% mensual fijo sobre el capital inicial = ${money(c.interes_total)}`],
+    ['Total a pagar', money(c.total)],
+    ['Forma de pago', `${c.num_cuotas} cuotas ${FREQ[c.frecuencia].toLowerCase()}es`]]);
+  let s = Number(c.total);
+  const estQ = q => Number(q.pagado) >= Number(q.valor) ? 'Pagada' : c.estado === 'anulado' ? 'Anulada' : c.estado === 'pagado' ? 'Cubierta' : q.fecha_vencimiento < hoy() ? 'Vencida' : Number(q.pagado) > 0 ? 'Parcial' : (k.proxima && k.proxima.numero === q.numero ? 'A pagar' : 'Pendiente');
+  const body = k.cu.map(q => { s -= Number(q.valor); return [q.numero, fdate(q.fecha_vencimiento), money(q.capital_parte), money(q.interes_parte), money(q.valor), money(Math.max(0, s)), money(q.pagado), estQ(q)]; });
+  const sum = f => k.cu.reduce((t, q) => t + Number(q[f]), 0);
+  doc.autoTable({ ...tablaEstilo, startY: yy,
+    head: [['#', 'Vence', 'Capital', 'Interés', 'Cuota', 'Saldo', 'Pagado', 'Estado']], body,
+    foot: [['', 'Total', money(sum('capital_parte')), money(sum('interes_parte')), money(sum('valor')), '', money(sum('pagado')), '']],
+    columnStyles: { 0: { halign: 'center' }, 1: { halign: 'center' }, 7: { halign: 'center' } },
+    didParseCell: d => {
+      if (d.section !== 'body' || d.column.index !== 7) return;
+      const t = d.cell.raw;
+      if (t === 'Pagada' || t === 'Cubierta') d.cell.styles.textColor = [6, 118, 71];
+      if (t === 'Vencida') d.cell.styles.textColor = [180, 35, 24];
+      if (t === 'A pagar') d.cell.styles.fontStyle = 'bold';
+    } });
+  yy = doc.lastAutoTable.finalY + 8;
+  if (Number(c.descuento) > 0) { doc.text('Descuento otorgado: ' + money(c.descuento), 15, yy); yy += 6; }
+  yy = negrita(doc, yy, 'Saldo pendiente a la fecha: ' + money(k.saldo));
+  const ap = cuotaAPagar(k, c);
+  if (ap) yy = negrita(doc, yy, `${ap.vencida ? 'Cuota vencida a pagar' : 'Cuota a pagar'}: ${money(ap.valor)} (${ap.vencida ? 'vencida desde' : 'vence'} ${fdate(ap.fecha)})`);
+  if (c.estado === 'pagado') yy = negrita(doc, yy, 'PAZ Y SALVO: obligación cancelada en su totalidad.');
+  firmaYGuardar(doc, yy, `Amortizacion_${pad(c.consecutivo)}_${nom(per.nombre)}.pdf`);
+}
+
+function docRecibo(c, k, per, p) {
+  if (!p) throw new Error('Pago no encontrado');
+  const { doc, y } = nuevoDoc('RECIBO DE PAGO No. ' + pad(p.consecutivo));
+  let yy = kv(doc, y, [['Fecha', fdate(p.fecha)], ['Obligación No.', pad(c.consecutivo)], ['Forma de pago', p.metodo]]);
+  yy = parrafo(doc, yy + 2, `Recibí de ${per.nombre}, identificado(a) con cédula No. ${per.cedula}, la suma de ${enLetras(p.monto)} (${money(p.monto)}), por concepto de pago de la obligación No. ${pad(c.consecutivo)}.`);
+  if (p.nota) yy = kv(doc, yy, [['Observación', p.nota]]);
+  yy = negrita(doc, yy + 2, 'Saldo actual de la obligación: ' + money(k.saldo));
+  firmaYGuardar(doc, yy, `Recibo_${pad(p.consecutivo)}_${nom(per.nombre)}.pdf`);
+}
+
+function docCobro(c, k, per) {
+  const h = hoy(), venc = k.atrasadas, lista = venc.length ? venc : (k.proxima ? [k.proxima] : []);
+  if (!lista.length) throw new Error('Este préstamo no tiene cuotas pendientes.');
+  const { doc, y } = nuevoDoc(venc.length ? 'NOTA DE COBRO' : 'RECORDATORIO DE PAGO');
+  let yy = kv(doc, y, [['Fecha', fdate(h)], ['Señor(a)', per.nombre], ['Cédula', per.cedula], ['Obligación No.', pad(c.consecutivo)]]);
+  const pend = q => Number(q.valor) - Number(q.pagado), total = lista.reduce((t, q) => t + pend(q), 0);
+  yy = parrafo(doc, yy + 2, venc.length
+    ? `Le informamos que, a la fecha, la obligación No. ${pad(c.consecutivo)} presenta ${venc.length} cuota(s) vencida(s) sin pagar. Le agradecemos acercarse a realizar el pago o comunicarse con nosotros para acordar la forma de ponerse al día.`
+    : `Le recordamos amablemente la próxima cuota de su obligación No. ${pad(c.consecutivo)}.`);
+  doc.autoTable({ ...tablaEstilo, startY: yy,
+    head: [['Cuota', 'Vence', 'Valor cuota', 'Abonado', 'Pendiente', 'Días de atraso']],
+    body: lista.map(q => [q.numero, fdate(q.fecha_vencimiento), money(q.valor), money(q.pagado), money(pend(q)), q.fecha_vencimiento < h ? diasEntre(q.fecha_vencimiento, h) : 0]),
+    foot: [['', '', '', 'Total', money(total), '']], columnStyles: { 0: { halign: 'center' }, 1: { halign: 'center' } } });
+  yy = doc.lastAutoTable.finalY + 8;
+  yy = negrita(doc, yy, 'Valor a pagar: ' + money(total));
+  doc.text('Saldo total de la obligación: ' + money(k.saldo), 15, yy); yy += 8;
+  if (negocio.telefono) yy = parrafo(doc, yy, `Para cualquier aclaración, comuníquese al ${negocio.telefono}.`);
+  firmaYGuardar(doc, yy, `${venc.length ? 'Cobro' : 'Recordatorio'}_${pad(c.consecutivo)}_${nom(per.nombre)}.pdf`);
+}
+
+function docCartera(lista, vista) {
+  const { doc, y } = nuevoDoc('ESTADO DE CARTERA');
+  const yy = kv(doc, y, [['Fecha', fdate(hoy())], ['Vista', vista], ['Préstamos', String(lista.length)]]);
+  const filas = lista.map(c => ({ c, a: cuotaAPagar(c.k, c) }));
+  const body = filas.map(({ c, a }) => [pad(c.consecutivo), c.personas?.nombre || '', c.personas?.cedula || '', estadoCuenta(c, c.k)[0], money(c.k.pagado), money(c.k.saldo), a ? money(a.valor) : '—', a ? fdate(a.fecha) : '—']);
+  const tot = f => lista.reduce((s, c) => s + f(c), 0);
+  doc.autoTable({ ...tablaEstilo, startY: yy, styles: { fontSize: 8, halign: 'right' },
+    head: [['#', 'Cliente', 'Cédula', 'Estado', 'Pagado', 'Saldo', 'Cuota a pagar', 'Vence']], body,
+    foot: [['', 'Total', '', '', money(tot(c => c.k.pagado)), money(tot(c => c.k.saldo)), money(filas.reduce((s, f) => s + (f.a ? f.a.valor : 0), 0)), '']],
+    columnStyles: { 0: { halign: 'center' }, 1: { halign: 'left' }, 2: { halign: 'left' }, 3: { halign: 'left' }, 7: { halign: 'center' } },
+    didParseCell: d => {
+      if (d.section !== 'body') { if ([1, 2, 3].includes(d.column.index)) d.cell.styles.halign = 'left'; return; }
+      if (d.column.index !== 3) return;
+      if (d.cell.raw === 'En mora') d.cell.styles.textColor = [180, 35, 24];
+      if (d.cell.raw === 'Paz y salvo') d.cell.styles.textColor = [6, 118, 71];
+    } });
+  guardarPie(doc, `Estado_de_cartera_${hoy()}.pdf`);
+}
+
+function docPazYSalvo(c, k, per, pagos) {
+  if (c.estado !== 'pagado') throw new Error('El paz y salvo solo se genera cuando el préstamo está pagado.');
+  const activos = (pagos || []).filter(p => p.estado === 'activo');
+  const fcan = activos.length ? activos.map(p => p.fecha).sort().pop() : hoy();
+  const { doc, y } = nuevoDoc('PAZ Y SALVO');
+  let yy = parrafo(doc, y + 2, `${negocio.ciudad ? negocio.ciudad + ', ' : ''}${fdate(hoy())}`);
+  yy = parrafo(doc, yy + 4, `${negocio.representante ? `El(la) suscrito(a) ${negocio.representante}, en representación de ` : 'Por medio del presente documento, '}${negocio.nombre}${negocio.nit ? ` (NIT / CC ${negocio.nit})` : ''}, hace constar que ${per.nombre}, identificado(a) con cédula de ciudadanía No. ${per.cedula}, canceló la totalidad de la obligación No. ${pad(c.consecutivo)}, desembolsada el ${fdate(c.fecha_desembolso)} por un capital de ${money(c.capital)}, con fecha de cancelación ${fdate(fcan)}.`);
+  if (Number(c.descuento) > 0) yy = parrafo(doc, yy + 2, `Se deja constancia de que, por acuerdo entre las partes, se otorgó un descuento de ${money(c.descuento)} sobre el saldo de la obligación.`);
+  yy = parrafo(doc, yy + 2, 'En consecuencia, a la fecha de este documento el(la) deudor(a) se encuentra a PAZ Y SALVO por concepto de esta obligación.');
+  yy = parrafo(doc, yy + 2, 'Se expide a solicitud del interesado(a).');
+  firmaYGuardar(doc, yy, `PazYSalvo_${pad(c.consecutivo)}_${nom(per.nombre)}.pdf`);
+}
+
+/* ======================= AJUSTES DEL NEGOCIO ======================= */
+function vConfig() {
+  const v = $('#vista');
+  const campo = (id, t, val) => `<label>${t}</label><input id="${id}" value="${esc(val || '')}">`;
+  v.innerHTML = `${avisoHtml()}<div class="card"><h2>Datos del negocio</h2>
+    <p class="mute">Aparecen en el encabezado de los documentos: recibos, tablas de amortización, notas de cobro y paz y salvo.</p>
+    ${campo('c-nom', 'Nombre del negocio', negocio.nombre)}
+    ${campo('c-nit', 'NIT o cédula', negocio.nit)}
+    ${campo('c-tel', 'Teléfono / WhatsApp', negocio.telefono)}
+    ${campo('c-dir', 'Dirección', negocio.direccion)}
+    ${campo('c-ciu', 'Ciudad', negocio.ciudad)}
+    ${campo('c-rep', 'Nombre de quien firma', negocio.representante)}
+    <div style="margin-top:12px"><button id="c-save">Guardar</button></div></div>`;
+  $('#c-save').onclick = async () => {
+    const val = { nombre: $('#c-nom').value.trim() || 'Mi Negocio', nit: $('#c-nit').value.trim(), telefono: $('#c-tel').value.trim(),
+      direccion: $('#c-dir').value.trim(), ciudad: $('#c-ciu').value.trim(), representante: $('#c-rep').value.trim() };
+    $('#c-save').disabled = true;
+    const { error } = await sb.from('config').upsert({ clave: 'negocio', valor: val });
+    if (!error) negocio = { ...negocio, ...val };
+    setAviso(error ? error.message : 'Datos guardados.', error ? 'err' : 'ok'); render();
+  };
+}
+
+
+
+/* ---------------- ESTADÍSTICAS ---------------- */
+let vistaEst = 'graf', estDatos = null;
+const MES_C = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const mesCorto = m => MES_C[Number(m.slice(5, 7)) - 1];
+const mesLargo = m => MES_L[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4);
+const num = n => Number(n || 0);
+const pct = (a, b) => b > 0 ? Math.round(a * 100 / b) : 0;
+function compacto(n) {
+  n = num(n); const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace('.', ',').replace(',0', '') + ' M';
+  if (a >= 1e3) return Math.round(n / 1e3) + ' mil';
+  return String(Math.round(n));
+}
+const dineroC = n => '$' + compacto(n);
+function hace(dias) {
+  dias = num(dias);
+  if (dias < 1) return 'hoy';
+  if (dias < 45) return `hace ${dias} día${dias === 1 ? '' : 's'}`;
+  if (dias < 730) { const m = Math.round(dias / 30.4); return `hace ${m} meses`; }
+  const a = Math.floor(dias / 365), m = Math.round((dias - a * 365) / 30.4);
+  return `hace ${a} año${a === 1 ? "" : "s"}` + (m > 0 && m < 12 ? ` y ${m} mes${m === 1 ? '' : 'es'}` : '');
+}
+function ticks(max) {
+  if (max <= 0) return [0, 1];
+  const p = Math.pow(10, Math.floor(Math.log10(max / 3)));
+  const paso = [1, 2, 5, 10].map(f => f * p).find(s => max / s <= 4) || 10 * p;
+  const t = []; for (let v = 0; v <= max + paso * 0.001; v += paso) t.push(v);
+  if (t[t.length - 1] < max) t.push(t[t.length - 1] + paso);
+  return t;
+}
+// Barra con el extremo superior redondeado (4px) y la base recta
+function barraPath(x, y, w, h, redondear) {
+  const r = redondear ? Math.min(4, w / 2, h) : 0;
+  return `M${x},${y + h}V${y + r}${r ? `Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}` : `H${x + w}`}V${y + h}Z`;
+}
+// Gráfico de columnas (apiladas o simples). series: [{k, nombre, color}]
+function columnas(id, filas, series, opts = {}) {
+  const W = 340, H = 180, pl = 46, pr = 6, pt = 10, pb = 24, iw = W - pl - pr, ih = H - pt - pb;
+  const tot = f => series.reduce((s, x) => s + num(f[x.k]), 0);
+  const tk = ticks(Math.max(...filas.map(tot), 0));
+  const top = tk[tk.length - 1] || 1;
+  const slot = iw / filas.length, bw = Math.min(24, slot - 6);
+  const Y = v => pt + ih - (v / top) * ih;
+  let g = tk.map(t => `<line x1="${pl}" x2="${W - pr}" y1="${Y(t)}" y2="${Y(t)}" class="v-grid"/><text x="${pl - 5}" y="${Y(t) + 3.5}" text-anchor="end" class="v-eje">${opts.dinero === false ? compacto(t) : compacto(t)}</text>`).join('');
+  filas.forEach((f, i) => {
+    const cx = pl + slot * i + slot / 2, x = cx - bw / 2;
+    let acum = 0;
+    const vis = series.filter(s => num(f[s.k]) > 0);
+    vis.forEach((s, j) => {
+      const v = num(f[s.k]), y0 = Y(acum + v), h = Math.max(Y(acum) - y0 - (vis.length > 1 && j < vis.length - 1 ? 0 : 0), 0);
+      const gap = j > 0 ? 2 : 0;           // 2px de superficie entre segmentos apilados
+      const yy = y0, hh = Math.max(h - gap, 1);
+      g += `<path d="${barraPath(x, yy, bw, hh, j === vis.length - 1)}" class="v-barra" style="fill:var(${s.color})" data-i="${i}"/>`;
+      acum += v;
+    });
+    g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="v-eje">${mesCorto(f.mes)}</text>`;
+    g += `<rect x="${pl + slot * i}" y="${pt}" width="${slot}" height="${ih + pb}" class="v-hit" data-g="${id}" data-i="${i}" tabindex="0" role="img" aria-label="${mesLargo(f.mes)}: ${series.map(s => s.nombre + ' ' + (opts.fmt || money)(f[s.k])).join(', ')}"/>`;
+  });
+  g += `<line x1="${pl}" x2="${W - pr}" y1="${Y(0)}" y2="${Y(0)}" class="v-base"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="v-svg" id="${id}" role="group">${g}</svg>`;
+}
+const leyenda = series => `<div class="v-ley">${series.map(s => `<span><i style="background:var(${s.color})"></i>${s.nombre}</span>`).join('')}</div>`;
+function barrasH(filas, color, fmt = money) {
+  const max = Math.max(...filas.map(f => num(f.v)), 1);
+  return filas.map(f => `<div class="v-fila"><div class="v-et">${esc(f.et)}</div><div class="v-pista"><div class="v-rel" style="width:${Math.max(num(f.v) / max * 100, num(f.v) > 0 ? 1.5 : 0)}%;background:var(${f.color || color})"></div></div><div class="v-val">${esc(fmt(f.v))}${f.sub ? `<small>${esc(f.sub)}</small>` : ''}</div></div>`).join('');
+}
+
+async function vEstadisticas() {
+  const v = $('#vista');
+  if (estDatos) v.classList.add('refresco'); else v.innerHTML = '<p class="mute">Calculando…</p>';
+  const { data, error } = await sb.rpc('estadisticas');
+  v.classList.remove('refresco');
+  if (error || !data) { v.innerHTML = `<div class="msg err">${esc(error ? error.message : 'No se pudieron calcular las estadísticas.')}</div>`; return; }
+  estDatos = data;
+  const r = data.resumen, cl = data.clientes, meses = data.meses || [];
+  if (!num(r.n_prestamos) && !num(cl.total)) {
+    v.innerHTML = `${avisoHtml()}<div class="card"><h2>Estadísticas</h2><p class="mute">Todavía no hay datos. Registra clientes y préstamos y aquí verás el dinero en la calle, la ganancia, el recaudo por mes y los rankings de clientes.</p></div>`;
+    return;
+  }
+  const calle = num(r.por_cobrar), cap = num(r.capital_en_calle), gan = num(r.ganancia_por_cobrar);
+  const pCap = pct(cap, calle), pGan = calle > 0 ? 100 - pCap : 0;
+  const mes = num(r.recaudado_mes), ant = num(r.recaudado_mes_anterior);
+  const delta = ant > 0 ? Math.round((mes - ant) * 100 / ant) : null;
+  const tile = (et, val, sub = '', cls = '') => `<div class="stat ${cls}"><span>${et}</span><b>${val}</b>${sub ? `<small class="mute">${sub}</small>` : ''}</div>`;
+  const SC = [{ k: 'cap', nombre: 'Capital', color: '--v-cap' }, { k: 'ganancia', nombre: 'Ganancia', color: '--v-gan' }];
+  const mesesCob = meses.map(m => ({ ...m, cap: Math.max(num(m.recaudado) - num(m.ganancia), 0) }));
+  const hayMeses = meses.some(m => num(m.prestado) || num(m.recaudado) || num(m.clientes_nuevos));
+
+  const secMeses = vistaEst === 'tabla'
+    ? `<div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Mes</th><th>Prestado</th><th>Cobrado</th><th>Ganancia</th><th>Nuevos</th></tr></thead><tbody>
+        ${meses.slice().reverse().map(m => `<tr><td>${mesLargo(m.mes)}</td><td title="${money(m.prestado)}">${dineroC(m.prestado)}<div class="mute" style="font-size:11px">${num(m.n_prestamos)} préstamo(s)</div></td><td title="${money(m.recaudado)}">${dineroC(m.recaudado)}</td><td title="${money(m.ganancia)}">${dineroC(m.ganancia)}</td><td>${num(m.clientes_nuevos)}</td></tr>`).join('')}
+        </tbody></table></div>`
+    : !hayMeses ? '<p class="mute">Aún no hay movimiento en los últimos 12 meses.</p>' : `
+      <h3>Dinero cobrado por mes</h3><p class="mute sub">Cada columna es lo que entró ese mes, dividido en capital que volvió y ganancia.</p>
+      ${leyenda(SC)}${columnas('g-cob', mesesCob, SC)}
+      <h3>Capital prestado por mes</h3><p class="mute sub">Dinero que salió a la calle en préstamos nuevos.</p>
+      ${columnas('g-pre', meses, [{ k: 'prestado', nombre: 'Prestado', color: '--v-cap' }])}
+      <h3>Clientes nuevos por mes</h3>
+      ${columnas('g-cli', meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], { fmt: n => String(num(n)) })}`;
+
+  const filaCli = (c, extra) => `<tr><td><b>${esc(c.nombre)}</b><div class="mute" style="font-size:11px">${esc(c.cedula || '')}</div></td>${extra}</tr>`;
+  const rank = (titulo, nota, cab, filas, vacio) => `<div class="card"><h2>${titulo}</h2>${nota ? `<p class="mute sub">${nota}</p>` : ''}${filas.length
+    ? `<div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr>${cab.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${filas.join('')}</tbody></table></div>` : `<p class="mute">${vacio}</p>`}</div>`;
+
+  const maxMora = Math.max(...(data.mora_edades || []).map(x => num(x.monto)), 0);
+  const RAMPA = ['--v-r1', '--v-r2', '--v-r3', '--v-r4'];
+  v.innerHTML = `${avisoHtml()}
+    <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Estadísticas</h2><button class="sec sm" id="e-ref">Actualizar</button></div>
+
+    <div class="card viz">
+      <span class="hero-et">Dinero en la calle</span>
+      <div class="hero">${money(calle)}</div>
+      <p class="mute sub" style="margin:2px 0 12px">Todo lo que te deben hoy en ${num(r.n_vigentes)} préstamo(s) vigente(s). De esto:</p>
+      <div class="v-split" role="img" aria-label="Capital ${money(cap)}, ganancia ${money(gan)}"><div style="width:${pCap}%;background:var(--v-cap)"></div><div style="width:${pGan}%;background:var(--v-gan)"></div></div>
+      <div class="v-dos">
+        <div><i style="background:var(--v-cap)"></i><span>Capital</span><b>${money(cap)}</b><small class="mute">${pCap}% · tu plata prestada</small></div>
+        <div><i style="background:var(--v-gan)"></i><span>Ganancia</span><b>${money(gan)}</b><small class="mute">${pGan}% · intereses por cobrar</small></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      ${tile('Capital prestado (histórico)', money(r.capital_prestado), `${num(r.n_prestamos)} préstamos`)}
+      ${tile('Capital recuperado', money(r.capital_recuperado), `${pct(num(r.capital_recuperado), num(r.capital_prestado))}% de lo prestado`)}
+      ${tile('Ganancia cobrada', money(r.ganancia_cobrada), `de ${money(r.ganancia_contratada)} contratada`)}
+      ${tile('Ganancia por cobrar', money(r.ganancia_por_cobrar))}
+      ${tile('Cobrado este mes', money(mes), delta === null ? 'sin mes anterior para comparar' : `<span class="${delta >= 0 ? 'ok-t' : 'bad-t'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</span> vs mes anterior (${money(ant)})`)}
+      ${tile('Total cobrado', money(r.recaudado_total))}
+      ${tile('En mora (vencido)', money(r.vencido), `${num(r.n_en_mora)} préstamo(s)`, num(r.vencido) > 0 ? 'alerta' : '')}
+      ${tile('Por vencer', money(r.prox7), `próx. 7 días · ${money(r.prox30)} en 30 días`)}
+      ${tile('Préstamo promedio', money(r.promedio_prestamo), `${r.cuotas_promedio} cuotas en promedio`)}
+      ${tile('Descuentos dados', money(r.descuentos))}
+    </div>
+
+    <div class="card viz">
+      <div class="row"><h2 style="margin:0">Mes a mes</h2><button class="sec sm" id="e-vista">${vistaEst === 'tabla' ? 'Ver gráficos' : 'Ver tabla'}</button></div>
+      ${secMeses}
+      <div class="v-tip" id="v-tip" hidden></div>
+    </div>
+
+    <div class="card"><h2>Clientes</h2>
+      <div class="stats" style="margin:0">
+        ${tile('Total de clientes', num(cl.total))}
+        ${tile('Con préstamo vigente', num(cl.con_vigente))}
+        ${tile('En mora', num(cl.con_mora), '', num(cl.con_mora) > 0 ? 'alerta' : '')}
+        ${tile('Recurrentes', num(cl.recurrentes), '2 o más préstamos')}
+        ${tile('Solo con préstamos pagados', num(cl.solo_pagados))}
+        ${tile('Sin préstamos', num(cl.sin_prestamos))}
+      </div>
+    </div>
+
+    ${rank('Quién más te ha prestado', 'Clientes con más capital recibido en total.', ['Cliente', 'Prestado', 'Debe'],
+      (data.top_capital || []).map(c => filaCli(c, `<td>${money(c.capital_total)}<div class="mute" style="font-size:11px">${num(c.n_prestamos)} préstamo(s)</div></td><td>${money(c.saldo)}${c.en_mora ? '<div><span class="tag bad">En mora</span></div>' : ''}</td>`)), 'Aún no hay préstamos.')}
+    ${rank('Clientes más antiguos', 'Los que llevan más tiempo registrados.', ['Cliente', 'Desde', 'Prestado'],
+      (data.antiguos || []).map(c => filaCli(c, `<td>${fdate(c.registrado)}<div class="mute" style="font-size:11px">${hace(c.dias)}</div></td><td>${money(c.capital_total)}</td>`)), 'Aún no hay clientes.')}
+    ${rank('Clientes más nuevos', 'Los últimos que registraste.', ['Cliente', 'Desde', 'Prestado'],
+      (data.nuevos || []).map(c => filaCli(c, `<td>${fdate(c.registrado)}<div class="mute" style="font-size:11px">${hace(c.dias)}</div></td><td>${money(c.capital_total)}</td>`)), 'Aún no hay clientes.')}
+    ${rank('Mayor mora', 'Clientes con más dinero vencido.', ['Cliente', 'Vencido', 'Saldo'],
+      (data.mayor_mora || []).map(c => filaCli(c, `<td><b class="bad-t">${money(c.atraso)}</b></td><td>${money(c.saldo)}</td>`)), 'Nadie está en mora. 👍')}
+
+    <div class="card viz"><h2>Antigüedad de la mora</h2><p class="mute sub">Cuotas vencidas sin pagar, según los días de atraso.</p>
+      ${maxMora > 0 ? barrasH((data.mora_edades || []).map((x, i) => ({ et: x.rango, v: x.monto, sub: `${num(x.n)} cuota(s)`, color: RAMPA[i] })), '--v-r1') : '<p class="mute">No hay cuotas vencidas.</p>'}</div>
+
+    <div class="card viz"><h2>Cómo prestas</h2>
+      <h3>Por frecuencia de pago</h3>${barrasH((data.por_frecuencia || []).map(x => ({ et: FREQ[x.frecuencia] || x.frecuencia, v: x.capital, sub: `${num(x.n)} préstamo(s)` })), '--v-cap')}
+      <h3>Por estado</h3>${barrasH((data.por_estado || []).map(x => ({ et: ({ vigente: 'Vigentes', pagado: 'Pagados', anulado: 'Anulados' })[x.estado] || x.estado, v: x.capital, sub: `${num(x.n)} préstamo(s)` })), '--v-cap')}
+    </div>
+    <p class="mute" style="font-size:12px">Cómo se calcula: cada pago se reparte entre capital e interés según la cuota que cubre. Un descuento se toma como interés perdonado. Los préstamos anulados no cuentan.</p>`;
+
+  $('#e-ref').onclick = () => vEstadisticas();
+  const bv = $('#e-vista'); if (bv) bv.onclick = () => { vistaEst = vistaEst === 'tabla' ? 'graf' : 'tabla'; vEstadisticas(); };
+  activarTips({ 'g-cob': [mesesCob, SC, money], 'g-pre': [meses, [{ k: 'prestado', nombre: 'Prestado', color: '--v-cap' }], money], 'g-cli': [meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], n => String(num(n))] });
+}
+
+// Tooltip: lista todas las series de la columna; el texto entra con textContent
+function activarTips(mapa) {
+  const tip = $('#v-tip'); if (!tip) return;
+  const cont = tip.parentElement;
+  const ocultar = () => { tip.hidden = true; document.querySelectorAll('.v-barra.on').forEach(b => b.classList.remove('on')); };
+  const mostrar = el => {
+    const [filas, series, fmt] = mapa[el.dataset.g], f = filas[Number(el.dataset.i)];
+    tip.textContent = '';
+    const t = document.createElement('div'); t.className = 'v-tt'; t.textContent = mesLargo(f.mes); tip.appendChild(t);
+    series.forEach(s => {
+      const row = document.createElement('div'); row.className = 'v-tr';
+      const k = document.createElement('i'); k.style.background = `var(${s.color})`;
+      const val = document.createElement('b'); val.textContent = fmt(f[s.k]);
+      const nom = document.createElement('span'); nom.textContent = s.nombre;
+      row.append(k, val, nom); tip.appendChild(row);
+    });
+    document.querySelectorAll('.v-barra.on').forEach(b => b.classList.remove('on'));
+    el.parentNode.querySelectorAll(`.v-barra[data-i="${el.dataset.i}"]`).forEach(b => b.classList.add('on'));
+    tip.hidden = false;
+    const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), w = tip.offsetWidth;
+    let x = r.left - c.left + r.width / 2 - w / 2; x = Math.max(4, Math.min(x, c.width - w - 4));
+    tip.style.left = x + 'px'; tip.style.top = (r.top - c.top - tip.offsetHeight - 6) + 'px';
+  };
+  document.querySelectorAll('.v-hit').forEach(el => {
+    el.addEventListener('pointerenter', () => mostrar(el));
+    el.addEventListener('pointermove', () => mostrar(el));
+    el.addEventListener('pointerleave', ocultar);
+    el.addEventListener('focus', () => mostrar(el));
+    el.addEventListener('blur', ocultar);
+  });
+}
+
+/* ---------------- MI CLAVE ---------------- */
+function vCuenta() {
+  const v = $('#vista');
+  v.innerHTML = `${avisoHtml()}<div class="card"><h2>Mi cuenta</h2>
+    <p class="mute">Usuario: <b>${esc(me.usuario || '')}</b></p>
+    <label>Clave nueva</label><input id="k-1" type="password" autocomplete="new-password">
+    <label>Repite la clave nueva</label><input id="k-2" type="password" autocomplete="new-password">
+    <div style="margin-top:12px"><button id="k-go">Cambiar clave</button></div></div>`;
+  $('#k-go').onclick = async () => {
+    const a = $('#k-1').value, b = $('#k-2').value;
+    if (a.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vCuenta(); }
+    if (a !== b) { setAviso('Las dos claves no son iguales.'); return vCuenta(); }
+    const { error } = await sb.auth.updateUser({ password: a });
+    setAviso(error ? error.message : 'Clave cambiada.', error ? 'err' : 'ok'); vCuenta();
+  };
+}
+init();
+</script>
+</body>
+</html>

@@ -94,6 +94,32 @@ nav button{flex:1 0 auto;white-space:nowrap;padding-left:10px;padding-right:10px
 .v-val{text-align:right;font-weight:600}
 .v-val small{display:block;font-weight:400;color:var(--mute);font-size:11px}
 .refresco{opacity:.55}
+[hidden]{display:none!important}
+.cols2{display:grid;gap:0 12px;align-items:start}
+.charts{display:grid;gap:0 28px}
+@media (min-width:700px){
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .charts{grid-template-columns:1fr 1fr}
+}
+@media (min-width:900px){
+  body{padding-bottom:0}
+  #app{display:flex;flex-direction:column;min-height:100vh}
+  header{position:static;padding:14px 32px}
+  nav{order:1;position:sticky;top:0;bottom:auto;z-index:4;border-top:0;border-bottom:1px solid var(--line);justify-content:center;gap:6px;overflow:visible}
+  nav button{flex:0 0 auto;padding:14px 20px;font-size:14px}
+  nav button.on{box-shadow:inset 0 -3px 0 var(--brand)}
+  main{order:2;width:100%;max-width:1160px;padding:24px 32px}
+  main.t-personas,main.t-roles,main.t-usuarios,main.t-config,main.t-cuenta{max-width:820px}
+  .cols2{grid-template-columns:1fr 1fr}
+  .tabla{font-size:14px}
+  .tabla th{font-size:13px}
+  .tabla th:first-child,.tabla td:first-child{min-width:140px}
+  .hero{font-size:56px}
+}
+@media (min-width:1100px){
+  .stats{grid-template-columns:repeat(4,1fr)}
+  .charts{grid-template-columns:repeat(3,1fr)}
+}
 .bad-t{color:var(--bad)}
 .tag.bad{color:var(--bad);border-color:var(--bad)}
 .tag.ok{color:var(--ok);border-color:var(--ok)}
@@ -113,13 +139,13 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const NOMBRE_NEGOCIO = 'Cartera';
 // Los usuarios entran con nombre de usuario; internamente se guardan como usuario@DOMINIO (no es un correo real).
 const DOMINIO_USUARIO = 'cartera.app';
+const MAX_INTENTOS = 5, MIN_BLOQUEO = 15; // deben coincidir con 04_acceso.sql
 // ============================================================================================
 
 const MODULOS = [['personas','Personas'],['prestamos','Préstamos'],['fiados','Fiados'],['pagos','Pagos'],['caja','Caja'],['reportes','Estadísticas']];
 const ACCIONES = ['ver','crear','editar','anular','exportar'];
 const limpiarUsuario = s => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
 const correoDe = s => { const u = limpiarUsuario(s); return u.includes('@') ? u : u + '@' + DOMINIO_USUARIO; };
-const esCorreoReal = s => { const u = limpiarUsuario(s); return u.includes('@') && !u.endsWith('@' + DOMINIO_USUARIO); };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let me = null, perms = new Set(), tab = 'prestamos', aviso = null, rolSel = null, negocio = { nombre: NOMBRE_NEGOCIO };
@@ -159,42 +185,33 @@ async function cargarYo() {
   render();
 }
 
-function vistaLogin(primera = false) {
+function vistaLogin() {
   $('#app').innerHTML = `<div class="login">
     <h1 style="text-align:center;color:var(--brand)">${esc(NOMBRE_NEGOCIO)}</h1>
-    <div class="card">
-      <h2>${primera ? 'Crear administrador inicial' : 'Iniciar sesión'}</h2>
+    <form class="card" id="l-form" autocomplete="on">
+      <h2>Iniciar sesión</h2>
       ${avisoHtml()}
-      ${primera ? '<label>Nombre</label><input id="l-nombre" autocomplete="name">' : ''}
       <label>Usuario</label><input id="l-mail" autocomplete="username" autocapitalize="none" spellcheck="false">
-      <label>Clave</label><input id="l-pass" type="password" autocomplete="${primera ? 'new-password' : 'current-password'}">
-      <div style="margin-top:14px"><button style="width:100%" id="l-go">${primera ? 'Crear cuenta' : 'Entrar'}</button></div>
-      ${primera ? '' : '<p style="text-align:center;margin:12px 0 0"><button class="sec sm" id="l-rec">Olvidé mi clave</button> <button class="sec sm" id="l-first">Primera vez</button></p>'}
-      ${primera ? '<p style="text-align:center;margin:12px 0 0"><button class="sec sm" id="l-back">Volver</button></p>' : ''}
-    </div></div>`;
-  $('#l-go').onclick = async () => {
-    const usuario = limpiarUsuario($('#l-mail').value), email = usuario ? correoDe(usuario) : '', password = $('#l-pass').value;
-    if (!usuario || password.length < 6) { setAviso('Escribe el usuario y una clave de mínimo 6 caracteres.'); return vistaLogin(primera); }
+      <label>Clave</label><input id="l-pass" type="password" autocomplete="current-password">
+      <div style="margin-top:14px"><button style="width:100%" id="l-go" type="submit">Entrar</button></div>
+      <p class="mute" style="font-size:12px;margin:12px 0 0;text-align:center">Después de ${MAX_INTENTOS} intentos fallidos el usuario se bloquea ${MIN_BLOQUEO} minutos.</p>
+    </form></div>`;
+  $('#l-form').onsubmit = async ev => {
+    ev.preventDefault();
+    const usuario = limpiarUsuario($('#l-mail').value), password = $('#l-pass').value;
+    if (!usuario || !password) { setAviso('Escribe el usuario y la clave.'); return vistaLogin(); }
+    const email = correoDe(usuario);
+    $('#l-go').disabled = true;
     setAviso(null);
-    if (primera) {
-      const nombre = $('#l-nombre').value.trim() || usuario;
-      const { error } = await sb.auth.signUp({ email, password, options: { data: { nombre, usuario } } });
-      if (error) { setAviso(error.message); return vistaLogin(true); }
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) { setAviso('Usuario o clave incorrectos.'); return vistaLogin(); }
-    }
+    // La clave se verifica en el servidor, que cuenta los intentos fallidos y bloquea al llegar al límite
+    const { data: r, error: e0 } = await sb.rpc('verificar_acceso', { p_email: email, p_clave: password });
+    if (e0) { setAviso('No se pudo verificar el acceso: ' + e0.message); return vistaLogin(); }
+    if (r && r.estado === 'bloqueado') { setAviso(`Demasiados intentos fallidos. Este usuario está bloqueado, intenta de nuevo en ${Math.ceil((r.segundos || 60) / 60)} minuto(s).`); return vistaLogin(); }
+    if (!r || r.estado !== 'ok') { setAviso('Usuario o clave incorrectos.'); return vistaLogin(); }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { setAviso('Usuario o clave incorrectos.'); return vistaLogin(); }
     await cargarYo();
   };
-  if (!primera) {
-    $('#l-first').onclick = () => { setAviso(null); vistaLogin(true); };
-    $('#l-rec').onclick = async () => {
-      const email = limpiarUsuario($('#l-mail').value);
-      if (!esCorreoReal(email)) { setAviso('La recuperación por correo solo funciona si tu usuario es un correo real. Si no, pídele al administrador que te cree el usuario de nuevo.'); return vistaLogin(); }
-      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
-      setAviso(error ? error.message : 'Te enviamos un correo para recuperar la clave.', error ? 'err' : 'ok'); vistaLogin();
-    };
-  } else $('#l-back').onclick = () => { setAviso(null); vistaLogin(); };
 }
 
 function tabsVisibles() {
@@ -211,13 +228,13 @@ function render() {
   const t = tabsVisibles();
   $('#app').innerHTML = `
     <header><div><b>${esc(negocio.nombre)}</b><small>${esc(me.nombre)}${me.es_admin ? ' · Administrador' : ''}</small></div><button class="sec sm" style="color:#fff;border-color:#ffffff55" id="clave">Clave</button> <button class="sec sm" style="color:#fff;border-color:#ffffff55" id="salir">Salir</button></header>
-    <main id="vista"></main>
+    <main id="vista" class="t-${tab}"></main>
     <nav>${t.map(x => `<button data-t="${x}" class="${x === tab ? 'on' : ''}">${TAB_NOMBRE[x]}</button>`).join('')}</nav>`;
   $('#salir').onclick = async () => { await sb.auth.signOut(); me = null; cuentaSel = null; setAviso(null); vistaLogin(); };
   $('#clave').onclick = () => { tab = 'cuenta'; setAviso(null); render(); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.t; cuentaSel = null; setAviso(null); render(); });
   if (!t.length && tab !== 'cuenta') { $('#vista').innerHTML = '<div class="card">Tu rol aún no tiene permisos asignados.</div>'; return; }
-  ({ prestamos: vPrestamos, estadisticas: vEstadisticas, personas: vPersonas, roles: vRoles, usuarios: vUsuarios, config: vConfig, cuenta: vCuenta })[tab]();
+  ({ prestamos: vPrestamos, estadisticas: vEstadisticas, personas: vPersonas, roles: vRoles, usuarios: vUsuarios, config: vConfig, cuenta: vMiClave })[tab]();
 }
 
 /* ---------------- PERSONAS ---------------- */
@@ -319,32 +336,33 @@ async function vRoles() {
 async function vUsuarios() {
   const v = $('#vista');
   v.innerHTML = '<p class="mute">Cargando…</p>';
-  const [{ data: us, error }, { data: roles }] = await Promise.all([
-    sb.from('perfiles').select('*').order('creado_en'), sb.from('roles').select('id,nombre').eq('activo', true).order('nombre')]);
+  const [{ data: us, error }, { data: roles }, { data: bloq }] = await Promise.all([
+    sb.from('perfiles').select('*').order('creado_en'), sb.from('roles').select('id,nombre').eq('activo', true).order('nombre'), sb.rpc('usuarios_bloqueados')]);
   if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  const bloqueados = new Map((bloq || []).map(b => [b.id, b.bloqueado_hasta]));
+  const hora = s => new Date(s).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
   const opciones = sel => '<option value="">Sin rol</option>' + (roles || []).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
   v.innerHTML = `${avisoHtml()}
     <div class="card"><h2>Nuevo usuario</h2>
+      <p class="mute" style="font-size:13px;margin-top:0">Solo tú puedes crear usuarios. Entrégale a la persona su usuario y su clave.</p>
       <label>Nombre</label><input id="u-nom">
       <label>Usuario</label><input id="u-mail" autocapitalize="none" spellcheck="false" placeholder="Ej: maria, cobrador1">
-      <label>Clave inicial</label><input id="u-pass" type="text" placeholder="Mínimo 6 caracteres">
+      <label>Clave inicial</label><input id="u-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
       <label>Rol</label><select id="u-rol">${opciones('')}</select>
       <div style="margin-top:12px"><button id="u-add">Crear usuario</button></div></div>
     <div class="card"><h2>Usuarios</h2>${us.map(u => `
       <div class="item ${u.activo ? '' : 'off'}">
-        <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">@${esc(u.usuario || '')}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : ''}${u.activo ? '' : '<span class="tag">inactivo</span>'}</div></div>
-        ${u.es_admin ? '' : `<div class="row" style="margin-top:8px"><select data-rol="${u.id}">${opciones(u.role_id)}</select>
-          <button class="sec sm" data-uact="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button></div>`}
+        <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">@${esc(u.usuario || '')}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : ''}${u.activo ? '' : '<span class="tag">inactivo</span>'}${bloqueados.has(u.id) ? `<span class="tag bad">bloqueado hasta ${hora(bloqueados.get(u.id))}</span>` : ''}</div></div>
+        ${u.es_admin ? '' : `<div class="row" style="margin-top:8px;flex-wrap:wrap"><select data-rol="${u.id}">${opciones(u.role_id)}</select>
+          <span><button class="sec sm" data-clave="${u.id}">Cambiar clave</button> <button class="sec sm" data-uact="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>${bloqueados.has(u.id) ? ` <button class="sm" data-desb="${u.id}">Desbloquear</button>` : ''}</span></div>
+          <div class="row" id="ck-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 6)" id="ck-i-${u.id}"><button class="sm" data-ckgo="${u.id}">Guardar</button></div>`}
       </div>`).join('')}</div>`;
   $('#u-add').onclick = async () => {
-    const nombre = $('#u-nom').value.trim(), usuario = limpiarUsuario($('#u-mail').value), email = usuario ? correoDe(usuario) : '', password = $('#u-pass').value, rol = $('#u-rol').value;
+    const nombre = $('#u-nom').value.trim(), usuario = limpiarUsuario($('#u-mail').value), password = $('#u-pass').value, rol = $('#u-rol').value;
     if (!nombre || !usuario || password.length < 6 || !rol) { setAviso('Completa nombre, usuario, clave (mínimo 6) y rol.'); return vUsuarios(); }
-    // Cliente aparte para no cerrar la sesión del administrador
-    const aux = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await aux.auth.signUp({ email, password, options: { data: { nombre, usuario } } });
-    if (error || !data.user) { setAviso(error ? error.message : 'No se pudo crear el usuario.'); return vUsuarios(); }
-    const up = await sb.from('perfiles').update({ role_id: rol, activo: true, nombre }).eq('id', data.user.id);
-    setAviso(up.error ? up.error.message : 'Usuario creado. Entrégale su usuario y clave.', up.error ? 'err' : 'ok'); vUsuarios();
+    $('#u-add').disabled = true;
+    const { error: e } = await sb.rpc('admin_crear_usuario', { p_nombre: nombre, p_email: correoDe(usuario), p_clave: password, p_rol: rol });
+    setAviso(e ? e.message : 'Usuario creado. Entrégale su usuario y su clave.', e ? 'err' : 'ok'); vUsuarios();
   };
   document.querySelectorAll('[data-rol]').forEach(s => s.onchange = async () => {
     const { error } = await sb.from('perfiles').update({ role_id: s.value || null }).eq('id', s.dataset.rol);
@@ -353,6 +371,17 @@ async function vUsuarios() {
   document.querySelectorAll('[data-uact]').forEach(b => b.onclick = async () => {
     const { error } = await sb.from('perfiles').update({ activo: b.dataset.v !== 'true' }).eq('id', b.dataset.uact);
     setAviso(error ? error.message : null); vUsuarios();
+  });
+  document.querySelectorAll('[data-clave]').forEach(b => b.onclick = () => { const f = $('#ck-' + b.dataset.clave); f.hidden = !f.hidden; });
+  document.querySelectorAll('[data-ckgo]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.ckgo, clave = $('#ck-i-' + id).value;
+    if (clave.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vUsuarios(); }
+    const { error } = await sb.rpc('admin_cambiar_clave', { p_id: id, p_clave: clave });
+    setAviso(error ? error.message : 'Clave cambiada. Entrégasela a la persona.', error ? 'err' : 'ok'); vUsuarios();
+  });
+  document.querySelectorAll('[data-desb]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('admin_desbloquear', { p_id: b.dataset.desb });
+    setAviso(error ? error.message : 'Usuario desbloqueado.', error ? 'err' : 'ok'); vUsuarios();
   });
 }
 
@@ -873,12 +902,12 @@ async function vEstadisticas() {
         ${meses.slice().reverse().map(m => `<tr><td>${mesLargo(m.mes)}</td><td title="${money(m.prestado)}">${dineroC(m.prestado)}<div class="mute" style="font-size:11px">${num(m.n_prestamos)} préstamo(s)</div></td><td title="${money(m.recaudado)}">${dineroC(m.recaudado)}</td><td title="${money(m.ganancia)}">${dineroC(m.ganancia)}</td><td>${num(m.clientes_nuevos)}</td></tr>`).join('')}
         </tbody></table></div>`
     : !hayMeses ? '<p class="mute">Aún no hay movimiento en los últimos 12 meses.</p>' : `
-      <h3>Dinero cobrado por mes</h3><p class="mute sub">Cada columna es lo que entró ese mes, dividido en capital que volvió y ganancia.</p>
+      <div class="charts"><div><h3>Dinero cobrado por mes</h3><p class="mute sub">Cada columna es lo que entró ese mes, dividido en capital que volvió y ganancia.</p>
       ${leyenda(SC)}${columnas('g-cob', mesesCob, SC)}
-      <h3>Capital prestado por mes</h3><p class="mute sub">Dinero que salió a la calle en préstamos nuevos.</p>
+      </div><div><h3>Capital prestado por mes</h3><p class="mute sub">Dinero que salió a la calle en préstamos nuevos.</p>
       ${columnas('g-pre', meses, [{ k: 'prestado', nombre: 'Prestado', color: '--v-cap' }])}
-      <h3>Clientes nuevos por mes</h3>
-      ${columnas('g-cli', meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], { fmt: n => String(num(n)) })}`;
+      </div><div><h3>Clientes nuevos por mes</h3>
+      ${columnas('g-cli', meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], { fmt: n => String(num(n)) })}</div></div>`;
 
   const filaCli = (c, extra) => `<tr><td><b>${esc(c.nombre)}</b><div class="mute" style="font-size:11px">${esc(c.cedula || '')}</div></td>${extra}</tr>`;
   const rank = (titulo, nota, cab, filas, vacio) => `<div class="card"><h2>${titulo}</h2>${nota ? `<p class="mute sub">${nota}</p>` : ''}${filas.length
@@ -930,6 +959,7 @@ async function vEstadisticas() {
       </div>
     </div>
 
+    <div class="cols2">
     ${rank('Quién más te ha prestado', 'Clientes con más capital recibido en total.', ['Cliente', 'Prestado', 'Debe'],
       (data.top_capital || []).map(c => filaCli(c, `<td>${money(c.capital_total)}<div class="mute" style="font-size:11px">${num(c.n_prestamos)} préstamo(s)</div></td><td>${money(c.saldo)}${c.en_mora ? '<div><span class="tag bad">En mora</span></div>' : ''}</td>`)), 'Aún no hay préstamos.')}
     ${rank('Clientes más antiguos', 'Los que llevan más tiempo registrados.', ['Cliente', 'Desde', 'Prestado'],
@@ -938,13 +968,16 @@ async function vEstadisticas() {
       (data.nuevos || []).map(c => filaCli(c, `<td>${fdate(c.registrado)}<div class="mute" style="font-size:11px">${hace(c.dias)}</div></td><td>${money(c.capital_total)}</td>`)), 'Aún no hay clientes.')}
     ${rank('Mayor mora', 'Clientes con más dinero vencido.', ['Cliente', 'Vencido', 'Saldo'],
       (data.mayor_mora || []).map(c => filaCli(c, `<td><b class="bad-t">${money(c.atraso)}</b></td><td>${money(c.saldo)}</td>`)), 'Nadie está en mora. 👍')}
+    </div>
 
+    <div class="cols2">
     <div class="card viz"><h2>Antigüedad de la mora</h2><p class="mute sub">Cuotas vencidas sin pagar, según los días de atraso.</p>
       ${maxMora > 0 ? barrasH((data.mora_edades || []).map((x, i) => ({ et: x.rango, v: x.monto, sub: `${num(x.n)} cuota(s)`, color: RAMPA[i] })), '--v-r1') : '<p class="mute">No hay cuotas vencidas.</p>'}</div>
 
     <div class="card viz"><h2>Cómo prestas</h2>
       <h3>Por frecuencia de pago</h3>${barrasH((data.por_frecuencia || []).map(x => ({ et: FREQ[x.frecuencia] || x.frecuencia, v: x.capital, sub: `${num(x.n)} préstamo(s)` })), '--v-cap')}
       <h3>Por estado</h3>${barrasH((data.por_estado || []).map(x => ({ et: ({ vigente: 'Vigentes', pagado: 'Pagados', anulado: 'Anulados' })[x.estado] || x.estado, v: x.capital, sub: `${num(x.n)} préstamo(s)` })), '--v-cap')}
+    </div>
     </div>
     <p class="mute" style="font-size:12px">Cómo se calcula: cada pago se reparte entre capital e interés según la cuota que cubre. Un descuento se toma como interés perdonado. Los préstamos anulados no cuentan.</p>`;
 
@@ -986,7 +1019,7 @@ function activarTips(mapa) {
 }
 
 /* ---------------- MI CLAVE ---------------- */
-function vCuenta() {
+function vMiClave() {
   const v = $('#vista');
   v.innerHTML = `${avisoHtml()}<div class="card"><h2>Mi cuenta</h2>
     <p class="mute">Usuario: <b>${esc(me.usuario || '')}</b></p>
@@ -995,10 +1028,10 @@ function vCuenta() {
     <div style="margin-top:12px"><button id="k-go">Cambiar clave</button></div></div>`;
   $('#k-go').onclick = async () => {
     const a = $('#k-1').value, b = $('#k-2').value;
-    if (a.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vCuenta(); }
-    if (a !== b) { setAviso('Las dos claves no son iguales.'); return vCuenta(); }
+    if (a.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vMiClave(); }
+    if (a !== b) { setAviso('Las dos claves no son iguales.'); return vMiClave(); }
     const { error } = await sb.auth.updateUser({ password: a });
-    setAviso(error ? error.message : 'Clave cambiada.', error ? 'err' : 'ok'); vCuenta();
+    setAviso(error ? error.message : 'Clave cambiada.', error ? 'err' : 'ok'); vMiClave();
   };
 }
 init();

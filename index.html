@@ -146,6 +146,10 @@ table a.btn.sm{padding:4px 7px;font-size:12px}
 .tag.bad{color:var(--bad);border-color:var(--bad)}
 .tag.ok{color:var(--ok);border-color:var(--ok)}
 details summary{cursor:pointer;font-size:17px;padding:2px 0}
+.res-lista{margin-top:6px}
+.res-cli{display:block;width:100%;text-align:left;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:0 0 6px;font-size:15px}
+.cli-elegido{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#ecf5ef;border:1px solid #bfd8c8;border-radius:10px;padding:10px 12px;margin-top:6px}
+.hist-prest{margin-top:4px;font-size:13px}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -277,6 +281,65 @@ function tabsVisibles() {
   return t;
 }
 
+/* ---------------- PUNTOS DE MIL Y BUSCADOR DE CLIENTE ---------------- */
+const milesTxt = n => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+function formatearMiles(t) {
+  const antes = t.value, pos = t.selectionStart == null ? antes.length : t.selectionStart;
+  const dig = antes.slice(0, pos).replace(/\D/g, '').length, solo = antes.replace(/\D/g, '');
+  const f = solo ? milesTxt(solo) : '';
+  if (f === antes) return;
+  t.value = f;
+  let n = 0, i = 0;
+  for (; i < f.length && n < dig; i++) if (/\d/.test(f[i])) n++;
+  try { t.setSelectionRange(i, i); } catch (e) {}
+}
+const sinTildes = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+let clientesBusca = [];
+function buscarClientes(q) {
+  const ts = sinTildes(q).split(/\s+/).filter(Boolean);
+  if (!ts.length) return [];
+  return clientesBusca.filter(p => {
+    const t = sinTildes(p.nombre) + ' ' + String(p.cedula || '').replace(/\D/g, '');
+    return ts.every(x => t.includes(x.replace(/\./g, '')));
+  }).slice(0, 6);
+}
+function elegirCliente(id) {
+  const p = clientesBusca.find(x => x.id === id);
+  if (!p) return;
+  $('#n-per').value = p.id;
+  $('#n-res').innerHTML = '';
+  $('#n-busca').hidden = true;
+  $('#n-elegido').hidden = false;
+  $('#n-elegido').innerHTML = '<span><b>' + esc(p.nombre) + '</b> <span class="mute">· CC ' + esc(p.cedula) + '</span></span><button class="sec sm" type="button" id="n-cambiar">Cambiar</button>';
+}
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!t) return;
+  if (t.dataset && t.dataset.miles != null) formatearMiles(t);
+  if (t.id === 'n-busca') {
+    const box = $('#n-res');
+    if (!t.value.trim()) { box.innerHTML = ''; return; }
+    const r = buscarClientes(t.value);
+    box.innerHTML = r.length
+      ? r.map(p => '<button type="button" class="res-cli" data-pick="' + p.id + '"><b>' + esc(p.nombre) + '</b><span class="mute"> · CC ' + esc(p.cedula) + '</span></button>').join('')
+      : '<div class="mute" style="padding:8px 2px">No encontré ese cliente. <button type="button" class="sec sm" id="n-ircli">Ir a Clientes</button></div>';
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'n-busca') {
+    e.preventDefault();
+    const r = buscarClientes(e.target.value);
+    if (r.length) elegirCliente(r[0].id);
+  }
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest ? e.target.closest('[data-pick], #n-cambiar, #n-ircli') : null;
+  if (!b) return;
+  if (b.id === 'n-ircli') { tab = 'personas'; setAviso(null); render(); return; }
+  if (b.id === 'n-cambiar') { $('#n-per').value = ''; $('#n-elegido').hidden = true; $('#n-busca').hidden = false; $('#n-busca').value = ''; $('#n-busca').focus(); return; }
+  elegirCliente(b.dataset.pick);
+});
+
 /* ---------------- TÍTULO Y LOGO DE LA PESTAÑA ---------------- */
 const FAV_CAPITALIA = 'data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2714%27%20fill%3D%27%2314532d%27%2F%3E%3Ctext%20x%3D%2732%27%20y%3D%2747%27%20font-family%3D%27Georgia%2Cserif%27%20font-size%3D%2744%27%20font-weight%3D%27700%27%20fill%3D%27white%27%20text-anchor%3D%27middle%27%3EC%3C%2Ftext%3E%3C%2Fsvg%3E';
 function inicialesNegocio(nom) {
@@ -330,6 +393,9 @@ async function vPersonas(filtro = '') {
   v.innerHTML = '<p class="mute">Cargando…</p>';
   const { data, error } = await sb.from('personas').select('*').order('creado_en', { ascending: false }).limit(300);
   if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
+  const { data: cuH } = can('prestamos', 'ver') ? await sb.from('cuentas').select('persona_id,consecutivo,estado,tipo').order('consecutivo').limit(3000) : { data: [] };
+  const porPer = new Map();
+  (cuH || []).forEach(x => { if (!porPer.has(x.persona_id)) porPer.set(x.persona_id, []); porPer.get(x.persona_id).push(x); });
   const f = filtro.toLowerCase();
   const lista = (data || []).filter(p => !f || (p.nombre + p.cedula + p.telefono).toLowerCase().includes(f));
   v.innerHTML = `${avisoHtml()}
@@ -357,6 +423,7 @@ async function vPersonas(filtro = '') {
           <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${me.es_admin && p.activo ? `<button class="sec sm" data-edit="${p.id}">Editar</button>` : ''}${p.activo && can('personas', 'anular') ? `<button class="sec sm" data-anular="${p.id}">Anular</button>` : ''}${me.es_admin ? `<button class="sec sm" data-borrar="${p.id}">Eliminar</button>` : ''}</div></div>
           <div class="mute">CC ${esc(p.cedula)} · ${esc(p.telefono)}${p.barrio ? ' · ' + esc(p.barrio) : ''}</div>
           ${p.direccion ? `<div class="mute">${esc(p.direccion)}</div>` : ''}
+          ${(porPer.get(p.id) || []).length ? `<div class="hist-prest mute">Préstamos: ${(porPer.get(p.id) || []).map(x => '<b>' + pad(x.consecutivo) + '</b> ' + ({ vigente: 'vigente', pagado: 'pagado', refinanciado: 'refinanciado', anulado: 'anulado' }[x.estado] || x.estado)).join(' · ')}</div>` : ''}
           ${p.activo ? '' : `<div class="mute">Motivo: ${esc(p.motivo_anulacion)}</div>`}
         </div>`).join('') : '<p class="mute">Sin resultados.</p>'}</div></div>`;
   $('#p-q').oninput = e => { clearTimeout(window._t); window._t = setTimeout(() => vPersonas(e.target.value), 300); };
@@ -500,7 +567,7 @@ async function vUsuarios() {
 
 /* ======================= PRÉSTAMOS ======================= */
 const hoy = () => new Date().toLocaleDateString('en-CA');
-const money = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO');
+const money = n => '$' + (Number(n || 0) < 0 ? '-' : '') + milesTxt(Math.abs(Number(n || 0)));
 const fdate = s => s ? String(s).slice(0, 10).split('-').reverse().join('/') : '';
 const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 const entero = s => Number(String(s ?? '').replace(/\D/g, '')) || 0;
@@ -569,7 +636,7 @@ async function vPrestamos() {
     (can('prestamos', 'crear') || can('fiados', 'crear')) ? sb.from('personas').select('id,nombre,cedula').eq('activo', true).order('nombre') : Promise.resolve({ data: [] })
   ]);
   if (rc.error) { v.innerHTML = `<div class="msg err">${esc(rc.error.message)}</div>`; return; }
-  const clientes = rp.data || [];
+  const clientes = rp.data || []; clientesBusca = clientes;
   const cuentas = rc.data.map(c => ({ ...c, k: calcCuenta(c) }));
   cuentas.forEach(c => { c.u = urgenciaDe(c, c.k); });
   const vig = cuentas.filter(c => c.estado === 'vigente');
@@ -595,9 +662,9 @@ async function vPrestamos() {
     ${(can('prestamos', 'crear') || can('fiados', 'crear')) ? `<details class="card"><summary><b>Nuevo préstamo o crédito</b></summary>
       ${clientes.length ? '' : '<p class="mute">Primero registra al cliente en la pestaña Clientes.</p>'}
       <label>¿Qué vas a registrar?</label><select id="n-tipo">${can('prestamos', 'crear') ? '<option value="prestamo">Préstamo de dinero</option>' : ''}${can('fiados', 'crear') ? '<option value="fiado">Producto a crédito</option>' : ''}</select>
-      <label>Cliente</label><select id="n-per"><option value="">Selecciona…</option>${clientes.map(p => `<option value="${p.id}">${esc(p.nombre)} · ${esc(p.cedula)}</option>`).join('')}</select>
+      <label>Cliente</label><input type="hidden" id="n-per" value=""><input id="n-busca" autocomplete="off" enterkeyhint="search" placeholder="Escribe el nombre o la cédula"><div id="n-res" class="res-lista"></div><div id="n-elegido" class="cli-elegido" hidden></div>
       <div id="n-desc-w" hidden><label>Producto que se entrega</label><input id="n-desc" maxlength="200" placeholder="Ej: nevera, celular, mercancía"></div>
-      <label id="n-cap-l">Capital prestado ($)</label><input id="n-cap" inputmode="numeric" placeholder="1000000">
+      <label id="n-cap-l">Capital prestado ($)</label><input id="n-cap" inputmode="numeric" data-miles placeholder="1.000.000" autocomplete="off">
       <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
       <p class="mute" style="font-size:12px;margin:4px 0 0">Ya viene con tu tasa habitual, pero puedes cambiarla en cada operación.</p>
       <label>Frecuencia de pago</label><select id="n-fre"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option></select>
@@ -714,7 +781,7 @@ async function vCuenta() {
     </div>
 
     ${vigente && can('pagos', 'crear') ? `<div class="card"><h2>Registrar pago</h2>
-      <label>Valor ($)</label><input id="pg-monto" inputmode="numeric" value="${pendProx}">
+      <label>Valor ($)</label><input id="pg-monto" inputmode="numeric" data-miles value="${milesTxt(pendProx)}">
       <label>Fecha</label><input id="pg-fecha" type="date" value="${h}">
       <label>Forma de pago</label><select id="pg-met"><option>efectivo</option><option>transferencia</option><option>otro</option></select>
       <label>Nota (opcional)</label><input id="pg-nota">
@@ -758,7 +825,7 @@ async function vCuenta() {
         ${k.mora ? `<tr><td class="mute">Incluye vencido (${k.atrasadas.length} cuota(s))</td><td style="text-align:right" class="mute">${money(k.vencido)}</td></tr>` : ''}
         <tr><td><b>Total a cancelar</b></td><td style="text-align:right"><b>${money(k.saldo)}</b></td></tr>
       </table>
-      <label>Valor del préstamo nuevo ($)</label><input id="rf-cap" inputmode="numeric" value="${Math.max(k.saldo, Number(c.capital))}">
+      <label>Valor del préstamo nuevo ($)</label><input id="rf-cap" inputmode="numeric" data-miles value="${milesTxt(Math.max(k.saldo, Number(c.capital)))}">
       <label>Interés mensual (%)</label><input id="rf-tasa" inputmode="decimal" value="${tasaDe(c.tipo)}">
       <label>Frecuencia</label><select id="rf-fre"><option value="semanal" ${c.frecuencia === 'semanal' ? 'selected' : ''}>Semanal</option><option value="quincenal" ${c.frecuencia === 'quincenal' ? 'selected' : ''}>Quincenal</option><option value="mensual" ${c.frecuencia === 'mensual' ? 'selected' : ''}>Mensual</option></select>
       <label>Número de cuotas</label><input id="rf-cuo" inputmode="numeric" value="${c.num_cuotas}">
@@ -767,18 +834,22 @@ async function vCuenta() {
       <div id="rf-msg"></div>
       <div style="margin-top:12px"><button id="rf-go">Refinanciar</button></div></details>` : ''}
 
-    ${puedeEditar || puedeBorrar ? `<details class="card" id="corr"><summary><b>Corregir un error</b> <span class="mute" style="font-size:13px">(solo administrador)</span></summary>
+    ${puedeEditar ? `<details class="card" id="corr"><summary><b>Corregir un error</b> <span class="mute" style="font-size:13px">(solo administrador)</span></summary>
       ${puedeEditar ? `<p class="mute" style="font-size:13px">Puedes cambiar los datos mientras el préstamo no tenga pagos. Las cuotas se recalculan y el número de referencia se conserva.</p>
       ${c.tipo === 'fiado' ? '<label>Producto</label><input id="ed-desc" value="' + esc(c.descripcion || '') + '">' : ''}
-      <label>${c.tipo === 'fiado' ? 'Valor del producto' : 'Valor del préstamo'} ($)</label><input id="ed-cap" inputmode="numeric" value="${Number(c.capital)}">
+      <label>${c.tipo === 'fiado' ? 'Valor del producto' : 'Valor del préstamo'} ($)</label><input id="ed-cap" inputmode="numeric" data-miles value="${milesTxt(Number(c.capital))}">
       <label>Interés mensual (%)</label><input id="ed-tasa" inputmode="decimal" value="${Number(c.tasa_mensual)}">
       <label>Frecuencia</label><select id="ed-fre">${['semanal', 'quincenal', 'mensual'].map(f => '<option value="' + f + '"' + (c.frecuencia === f ? ' selected' : '') + '>' + f.charAt(0).toUpperCase() + f.slice(1) + '</option>').join('')}</select>
       <label>Número de cuotas</label><input id="ed-cuo" inputmode="numeric" value="${c.num_cuotas}">
       <label>Fecha de desembolso</label><input id="ed-fec" type="date" value="${c.fecha_desembolso}">
       <div class="msg ok" id="ed-prev"></div><div id="ed-msg"></div>
       <button id="ed-go">Guardar cambios</button>` : ''}
-      ${puedeBorrar ? `<p style="margin:14px 0 0"><button class="bad sm" id="b-borrar">Eliminar este préstamo</button></p><p class="mute" style="font-size:12px;margin:4px 0 0">Solo es posible porque no tiene pagos. Queda en el registro de auditoría.</p>` : ''}
     </details>` : ''}
+
+    ${me.es_admin && c.estado !== 'refinanciado' ? `<div class="card" id="elim"><h2>Eliminar este préstamo</h2>
+      ${puedeBorrar ? `<p class="mute" style="font-size:13px;margin-top:0">Se borra por completo, con sus cuotas. Solo es posible porque no tiene pagos. Queda en el registro de auditoría.</p><button class="bad" id="b-borrar">Eliminar este préstamo</button>`
+      : `<p class="mute" style="font-size:13px;margin:0">No se puede eliminar: ${c.refinancia_a || (ref && ref.viejo.id === c.id) ? 'está enlazado a una refinanciación. Si fue un error, usa «Deshacer refinanciación».' : !sinPagos ? 'ya tiene pagos registrados. Si fue un error, anula primero esos pagos.' : 'este préstamo ya no está vigente.'}</p>`}
+    </div>` : ''}
 
     ${vigente && (me.es_admin || can('prestamos', 'anular')) ? `<div class="card"><h2>Administración</h2>
       <div style="display:flex;flex-wrap:wrap;gap:8px">

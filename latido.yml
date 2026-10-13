@@ -1,0 +1,22 @@
+# Mantiene activa la base de datos de Supabase (plan gratis).
+# Va en el repositorio de GitHub, en la ruta:  .github/workflows/latido.yml
+name: Latido de la base de datos
+
+on:
+  schedule:
+    - cron: '7 */6 * * *'     # cada 6 horas (4 veces al día)
+  workflow_dispatch:           # también se puede ejecutar a mano
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a la función latido
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 10 \
+            "$SUPABASE_URL/rest/v1/rpc/latido" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY"

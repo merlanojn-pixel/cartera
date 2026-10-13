@@ -158,6 +158,7 @@ const ACCIONES = ['ver','crear','editar','anular','exportar'];
 const limpiarUsuario = s => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
 // La cuenta se escribe usuario@código-del-negocio (ej: maria@inversionesvitola)
 const partirCuenta = s => { const t = limpiarUsuario(s), i = t.lastIndexOf('@'); return i < 1 ? null : { usuario: t.slice(0, i), codigo: t.slice(i + 1) }; };
+const tasaDe = tipo => { const v = tipo === 'fiado' ? negocio.tasa_credito : negocio.tasa_prestamo; return v == null || v === '' ? (tipo === 'fiado' ? 10 : 20) : v; };
 const cuentaDe = u => (u && u.usuario ? u.usuario + '@' + (negocio.codigo || '') : '');
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -451,13 +452,13 @@ function tablaPrestamos(lista) {
   const filas = lista.map(c => ({ c, a: cuotaAPagar(c.k, c) }));
   const totPag = lista.reduce((s, c) => s + c.k.pagado, 0), totSal = lista.reduce((s, c) => s + c.k.saldo, 0), totCuo = filas.reduce((s, f) => s + (f.a ? f.a.valor : 0), 0);
   return `<div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Cliente</th><th>Pagado</th><th>Saldo</th><th>Cuota a pagar</th></tr></thead><tbody>
-    ${filas.map(({ c, a }) => `<tr data-c="${c.id}" style="cursor:pointer"><td><b>${esc(c.personas?.nombre || '—')}</b><div class="mute" style="font-size:11px">#${pad(c.consecutivo)}</div>${tagHtml(estadoCuenta(c, c.k))}</td><td>${money(c.k.pagado)}</td><td><b>${money(c.k.saldo)}</b></td><td>${a ? `<b class="${a.vencida ? 'bad-t' : ''}">${money(a.valor)}</b><br><span class="mute">${a.vencida ? 'desde ' : 'vence '}${fdate(a.fecha).slice(0, 5)}</span>` : '—'}</td></tr>`).join('')}
+    ${filas.map(({ c, a }) => `<tr data-c="${c.id}" style="cursor:pointer"><td><b>${esc(c.personas?.nombre || '—')}</b><div class="mute" style="font-size:11px">#${pad(c.consecutivo)}${c.tipo === 'fiado' ? ' · Producto' + (c.descripcion ? ': ' + esc(c.descripcion) : '') : ''}</div>${tagHtml(estadoCuenta(c, c.k))}</td><td>${money(c.k.pagado)}</td><td><b>${money(c.k.saldo)}</b></td><td>${a ? `<b class="${a.vencida ? 'bad-t' : ''}">${money(a.valor)}</b><br><span class="mute">${a.vencida ? 'desde ' : 'vence '}${fdate(a.fecha).slice(0, 5)}</span>` : '—'}</td></tr>`).join('')}
     </tbody><tfoot><tr><td>Total (${lista.length})</td><td>${money(totPag)}</td><td>${money(totSal)}</td><td>${money(totCuo)}</td></tr></tfoot></table></div>`;
 }
 function tarjetasPrestamos(lista) {
   return lista.map(c => `
     <div class="item" data-c="${c.id}" style="cursor:pointer">
-      <div class="row"><div><b>#${pad(c.consecutivo)} · ${esc(c.personas?.nombre || '—')}</b> ${tagHtml(estadoCuenta(c, c.k))}</div><b>${money(c.k.saldo)}</b></div>
+      <div class="row"><div><b>#${pad(c.consecutivo)} · ${esc(c.personas?.nombre || '—')}</b> ${tagHtml(estadoCuenta(c, c.k))}${c.tipo === 'fiado' ? `<div class="mute" style="font-size:12px">Producto a crédito${c.descripcion ? ': ' + esc(c.descripcion) : ''}</div>` : ''}</div><b>${money(c.k.saldo)}</b></div>
       <div class="mute">${c.estado === 'vigente'
         ? (c.k.mora ? `${c.k.atrasadas.length} cuota(s) vencida(s) · ${c.k.diasMora} días de atraso · debe ${money(c.k.vencido)}`
           : c.k.proxima ? `Próxima cuota: ${fdate(c.k.proxima.fecha_vencimiento)} · ${money(Number(c.k.proxima.valor) - Number(c.k.proxima.pagado))}` : '')
@@ -472,7 +473,7 @@ async function vPrestamos() {
   v.innerHTML = '<p class="mute">Cargando…</p>';
   const [rc, rp] = await Promise.all([
     sb.from('cuentas').select('*,personas(nombre,cedula,telefono),cuotas(numero,fecha_vencimiento,valor,pagado)').order('creado_en', { ascending: false }).limit(500),
-    can('prestamos', 'crear') ? sb.from('personas').select('id,nombre,cedula').eq('activo', true).eq('tipo', 'cliente').order('nombre') : Promise.resolve({ data: [] })
+    (can('prestamos', 'crear') || can('fiados', 'crear')) ? sb.from('personas').select('id,nombre,cedula').eq('activo', true).eq('tipo', 'cliente').order('nombre') : Promise.resolve({ data: [] })
   ]);
   if (rc.error) { v.innerHTML = `<div class="msg err">${esc(rc.error.message)}</div>`; return; }
   const clientes = rp.data || [];
@@ -494,11 +495,14 @@ async function vPrestamos() {
       <div class="stat"><span>Para cobrar hoy</span><b>${money(cobroHoy)}</b></div>
       <div class="stat"><span>Préstamos vigentes</span><b>${vig.length}</b></div>
     </div>
-    ${can('prestamos', 'crear') ? `<details class="card"><summary><b>Nuevo préstamo</b></summary>
+    ${(can('prestamos', 'crear') || can('fiados', 'crear')) ? `<details class="card"><summary><b>Nuevo préstamo o crédito</b></summary>
       ${clientes.length ? '' : '<p class="mute">Primero registra al cliente en la pestaña Personas.</p>'}
+      <label>¿Qué vas a registrar?</label><select id="n-tipo">${can('prestamos', 'crear') ? '<option value="prestamo">Préstamo de dinero</option>' : ''}${can('fiados', 'crear') ? '<option value="fiado">Producto a crédito</option>' : ''}</select>
       <label>Cliente</label><select id="n-per"><option value="">Selecciona…</option>${clientes.map(p => `<option value="${p.id}">${esc(p.nombre)} · ${esc(p.cedula)}</option>`).join('')}</select>
-      <label>Capital prestado ($)</label><input id="n-cap" inputmode="numeric" placeholder="1000000">
-      <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="20">
+      <div id="n-desc-w" hidden><label>Producto que se entrega</label><input id="n-desc" maxlength="200" placeholder="Ej: nevera, celular, mercancía"></div>
+      <label id="n-cap-l">Capital prestado ($)</label><input id="n-cap" inputmode="numeric" placeholder="1000000">
+      <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
+      <p class="mute" style="font-size:12px;margin:4px 0 0">Ya viene con tu tasa habitual, pero puedes cambiarla en cada operación.</p>
       <label>Frecuencia de pago</label><select id="n-fre"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option></select>
       <label>Número de cuotas</label><input id="n-cuo" inputmode="numeric" value="3">
       <label>Fecha de desembolso</label><input id="n-fec" type="date" value="${h}">
@@ -524,14 +528,25 @@ async function vPrestamos() {
       $('#n-prev').innerHTML = `Interés total: <b>${money(inte)}</b> (${tasa}% × ${Number.isInteger(meses) ? meses : meses.toFixed(2)} ${meses === 1 ? 'mes' : 'meses'})<br>Total a pagar: <b>${money(tot)}</b><br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
     };
     ['n-cap', 'n-tasa', 'n-fre', 'n-cuo'].forEach(id => $('#' + id).oninput = prev);
-    prev();
+    const alTipo = (cambiaTasa) => {
+      const f = $('#n-tipo').value === 'fiado';
+      $('#n-desc-w').hidden = !f;
+      $('#n-cap-l').textContent = f ? 'Valor del producto ($)' : 'Capital prestado ($)';
+      $('#n-go').textContent = f ? 'Crear crédito' : 'Crear préstamo';
+      if (cambiaTasa) $('#n-tasa').value = tasaDe(f ? 'fiado' : 'prestamo');
+      prev();
+    };
+    $('#n-tipo').onchange = () => alTipo(true);
+    alTipo(false);
     $('#n-go').onclick = async () => {
       const per = $('#n-per').value, cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, cuo = entero($('#n-cuo').value), fec = $('#n-fec').value;
-      if (!per || !cap || !cuo || !fec || isNaN(tasa)) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, capital, tasa, cuotas y fecha.</div>'; return; }
+      const tipo = $('#n-tipo').value, desc = $('#n-desc').value.trim();
+      if (!per || !cap || !cuo || !fec || isNaN(tasa)) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
+      if (tipo === 'fiado' && !desc) { $('#n-msg').innerHTML = '<div class="msg err">Escribe qué producto se entrega.</div>'; return; }
       $('#n-go').disabled = true;
-      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec });
+      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, p_descripcion: tipo === 'fiado' ? desc : null });
       if (error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; $('#n-go').disabled = false; return; }
-      cuentaSel = data; setAviso('Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
+      cuentaSel = data; setAviso(tipo === 'fiado' ? 'Crédito creado. Ya puedes descargar su tabla de amortización.' : 'Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
     };
   }
 }
@@ -555,9 +570,10 @@ async function vCuenta() {
     <div class="card">
       <div class="row"><h2 style="margin:0">#${pad(c.consecutivo)} · ${esc(per.nombre || '—')}</h2>${tagHtml(estadoCuenta(c, k))}</div>
       <div class="mute">CC ${esc(per.cedula || '')}${per.telefono ? ' · ' + esc(per.telefono) : ''}</div>
+      ${c.tipo === 'fiado' ? `<div class="mute">Producto a crédito${c.descripcion ? ': ' + esc(c.descripcion) : ''}</div>` : ''}
       <table class="matrix" style="margin-top:10px">
-        <tr><td>Capital</td><td style="text-align:right">${money(c.capital)}</td></tr>
-        <tr><td>Interés (${Number(c.tasa_mensual)}% mensual fijo)</td><td style="text-align:right">${money(c.interes_total)}</td></tr>
+        <tr><td>${c.tipo === 'fiado' ? 'Valor del producto' : 'Capital'}</td><td style="text-align:right">${money(c.capital)}</td></tr>
+        <tr><td>${c.tipo === 'fiado' ? 'Financiación' : 'Interés'} (${Number(c.tasa_mensual)}% mensual fijo)</td><td style="text-align:right">${money(c.interes_total)}</td></tr>
         <tr><td>Total a pagar</td><td style="text-align:right"><b>${money(c.total)}</b></td></tr>
         <tr><td>Pagado</td><td style="text-align:right">${money(k.pagado)}</td></tr>
         ${Number(c.descuento) > 0 ? `<tr><td>Descuento</td><td style="text-align:right">${money(c.descuento)}</td></tr>` : ''}
@@ -822,10 +838,15 @@ function vConfig() {
     ${campo('c-dir', 'Dirección', negocio.direccion)}
     ${campo('c-ciu', 'Ciudad', negocio.ciudad)}
     ${campo('c-rep', 'Nombre de quien firma', negocio.representante)}
+    <h2 style="margin-top:18px">Tasas habituales</h2>
+    <p class="mute" style="margin-top:0">Son las que aparecen por defecto al crear un préstamo o un producto a crédito. En cada operación las puedes cambiar.</p>
+    ${campo('c-tp', 'Préstamos de dinero (% mensual)', tasaDe('prestamo'))}
+    ${campo('c-tc', 'Productos a crédito (% mensual)', tasaDe('fiado'))}
     <div style="margin-top:12px"><button id="c-save">Guardar</button></div></div>`;
   $('#c-save').onclick = async () => {
     const val = { nombre: $('#c-nom').value.trim() || negocio.nombre, nit: $('#c-nit').value.trim(), telefono: $('#c-tel').value.trim(),
-      direccion: $('#c-dir').value.trim(), ciudad: $('#c-ciu').value.trim(), representante: $('#c-rep').value.trim() };
+      direccion: $('#c-dir').value.trim(), ciudad: $('#c-ciu').value.trim(), representante: $('#c-rep').value.trim(),
+      tasa_prestamo: (n => isNaN(n) || n < 0 || n > 100 ? 20 : n)(decimal($('#c-tp').value)), tasa_credito: (n => isNaN(n) || n < 0 || n > 100 ? 10 : n)(decimal($('#c-tc').value)) };
     $('#c-save').disabled = true;
     const { nombre: nom, ...resto } = val;
     const { error } = await sb.rpc('guardar_negocio', { p_nombre: nom, p_config: resto });

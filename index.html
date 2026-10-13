@@ -609,6 +609,16 @@ async function vCuenta() {
         ${c.estado === 'pagado' ? '<button data-doc="paz">Paz y salvo</button>' : ''}
       </div></div>` : ''}
 
+    ${verDocs && c.estado !== 'anulado' ? `<div class="card"><h2>Enviar al cliente por WhatsApp</h2>
+      <p class="mute" style="margin-top:0;font-size:13px">Arma el mensaje con el PDF adjunto. ${per.telefono ? 'Teléfono del cliente: ' + esc(per.telefono) + '.' : '<b>Este cliente no tiene teléfono registrado.</b>'}</p>
+      <label>¿Qué le envías?</label><select id="wa-doc">
+        ${vigente ? '<option value="cobro">' + (k.mora ? 'Nota de cobro (cuotas vencidas)' : 'Recordatorio de próxima cuota') + '</option>' : ''}
+        ${c.estado === 'pagado' ? '<option value="paz">Paz y salvo</option>' : ''}
+        <option value="amort">Tabla de amortización</option>
+        ${pagos.some(p => p.estado === 'activo') ? '<option value="recibo">Recibo del último pago</option>' : ''}</select>
+      <div id="wa-msg"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"><button id="wa-go">Enviar por WhatsApp</button><button class="sec" id="wa-chat">Solo abrir el chat con el mensaje</button></div></div>` : ''}
+
     ${vigente && (me.es_admin || can('prestamos', 'anular')) ? `<div class="card"><h2>Administración</h2>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         ${me.es_admin ? '<button class="sec" id="b-desc">Aplicar descuento</button>' : ''}
@@ -654,9 +664,69 @@ async function vCuenta() {
     ({ amort: docAmortizacion, cobro: docCobro, paz: docPazYSalvo })[b.dataset.doc](c, k, per, pagos)));
   document.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => generar(() =>
     docRecibo(c, k, per, pagos.find(p => p.id === b.dataset.rec))));
+  if ($('#wa-go')) {
+    const ir = async solo => {
+      const out = $('#wa-msg'); out.innerHTML = '';
+      try {
+        const t = await enviarWa($('#wa-doc').value, c, k, per, pagos, solo);
+        if (t) out.innerHTML = '<div class="msg ok">' + esc(t) + '</div>';
+      } catch (e) { out.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }
+    };
+    $('#wa-go').onclick = () => ir(false);
+    $('#wa-chat').onclick = () => ir(true);
+  }
 }
 
 /* ======================= DOCUMENTOS (PDF) ======================= */
+
+/* ======================= ENVIAR AL CLIENTE POR WHATSAPP ======================= */
+let capturaPdf = null;
+function mensajeWa(tipo, c, k, per, pagos) {
+  const n = (per.nombre || '').split(' ')[0] || '', neg = negocio.nombre, ob = pad(c.consecutivo);
+  if (tipo === 'cobro') {
+    const a = cuotaAPagar(k, c);
+    if (!a) return '';
+    return a.vencida
+      ? `Hola ${n}, le saludamos de ${neg}. Su obligación No. ${ob} presenta ${k.atrasadas.length} cuota(s) vencida(s) por ${money(a.valor)}. Le enviamos la nota de cobro. Quedamos atentos a su pago. Gracias.`
+      : `Hola ${n}, le saludamos de ${neg}. Le recordamos que el ${fdate(a.fecha)} vence su cuota de ${money(a.valor)} (obligación No. ${ob}). Le enviamos el recordatorio. Gracias.`;
+  }
+  if (tipo === 'paz') return `Hola ${n}, le escribimos de ${neg}. Su obligación No. ${ob} quedó pagada en su totalidad. Le enviamos su paz y salvo. ¡Gracias por su cumplimiento!`;
+  if (tipo === 'amort') return `Hola ${n}, le enviamos de parte de ${neg} la tabla de amortización de su obligación No. ${ob}: ${money(c.capital)} a ${c.num_cuotas} cuotas ${(FREQ[c.frecuencia] || '').toLowerCase()}es. Cualquier duda, con gusto le ayudamos.`;
+  const p = [...pagos].reverse().find(x => x.estado === 'activo');
+  return p ? `Hola ${n}, le confirmamos de parte de ${neg} el recibo de su pago de ${money(p.monto)} del ${fdate(p.fecha)}. Saldo actual de su obligación No. ${ob}: ${money(k.saldo)}. Gracias.` : '';
+}
+function pdfWa(tipo, c, k, per, pagos) {
+  capturaPdf = {};
+  try {
+    if (!window.jspdf) throw new Error('No se cargó el generador de PDF. Revisa tu conexión a internet.');
+    if (tipo === 'recibo') docRecibo(c, k, per, [...pagos].reverse().find(x => x.estado === 'activo'));
+    else ({ amort: docAmortizacion, cobro: docCobro, paz: docPazYSalvo })[tipo](c, k, per, pagos);
+    return capturaPdf;
+  } finally { capturaPdf = null; }
+}
+async function enviarWa(tipo, c, k, per, pagos, soloChat) {
+  const msg = mensajeWa(tipo, c, k, per, pagos), tel = telWa(per.telefono);
+  if (!msg) throw new Error('Ese documento no aplica para este préstamo.');
+  const chat = tel ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg) : '';
+  if (soloChat) {
+    if (!chat) throw new Error('Este cliente no tiene teléfono registrado.');
+    window.open(chat, '_blank');
+    return 'Se abrió WhatsApp con el mensaje listo.';
+  }
+  const r = pdfWa(tipo, c, k, per, pagos);
+  if (!r || !r.blob) throw new Error('No se pudo generar el documento.');
+  const file = new File([r.blob], r.nombre, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], text: msg, title: r.nombre }); return 'Elige WhatsApp y el contacto; el PDF y el mensaje ya van listos.'; }
+    catch (e) { if (e && e.name === 'AbortError') return ''; /* si falla, seguimos con el plan B */ }
+  }
+  // Plan B: se descarga el PDF y se abre el chat con el mensaje; el PDF se adjunta con el clip
+  const a = document.createElement('a'); a.href = URL.createObjectURL(r.blob); a.download = r.nombre; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  if (chat) window.open(chat, '_blank');
+  return chat ? 'Se descargó el PDF y se abrió el chat con el mensaje. En WhatsApp pulsa el clip (📎) y adjunta el PDF descargado.' : 'Se descargó el PDF. Este cliente no tiene teléfono registrado: envíalo manualmente.';
+}
+
 function generar(fn) {
   try {
     if (!window.jspdf) throw new Error('No se cargó el generador de PDF. Revisa tu conexión a internet.');
@@ -729,6 +799,7 @@ function guardarPie(doc, archivo) {
     doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
     doc.text(`Documento generado el ${new Date().toLocaleString('es-CO')} · ${negocio.nombre || ''}`, 108, 272, { align: 'center' });
   }
+  if (capturaPdf) { capturaPdf.blob = doc.output('blob'); capturaPdf.nombre = archivo; return; }
   doc.save(archivo);
 }
 

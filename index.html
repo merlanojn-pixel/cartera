@@ -184,6 +184,11 @@ const partirCuenta = s => { const t = limpiarUsuario(s), i = t.lastIndexOf('@');
 const tasaDe = tipo => { const v = tipo === 'fiado' ? negocio.tasa_credito : negocio.tasa_prestamo; return v == null || v === '' ? (tipo === 'fiado' ? 10 : 20) : v; };
 const cuentaDe = u => (u && u.usuario ? u.usuario + '@' + (negocio.codigo || '') : '');
 
+if (typeof supabase === 'undefined' || !/^https:\/\/.+\..+/.test(SUPABASE_URL) || /PEGA_AQUI/.test(SUPABASE_KEY)) {
+  const msg = typeof supabase === 'undefined' ? 'No se pudo cargar la librería de conexión. Revisa tu internet y recarga la página.' : 'Falta configurar la conexión: en las dos primeras líneas del script de este archivo hay que pegar la URL y la clave publishable de tu proyecto en Supabase.';
+  document.addEventListener('DOMContentLoaded', () => { document.body.innerHTML = '<div style="font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:20px;border:1px solid #ccc;border-radius:12px"><h2 style="margin-top:0">CAPITALIA</h2><p>' + msg + '</p></div>'; });
+  throw new Error(msg);
+}
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let me = null, perms = new Set(), tab = 'prestamos', aviso = null, rolSel = null, negocio = { nombre: NOMBRE_NEGOCIO };
 

@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#14532d">
-<title>CAPITALIA · Administra tu negocio de préstamos</title>
+<title>CAPITALIA</title>
+<link rel="icon" id="fav" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2714%27%20fill%3D%27%2314532d%27%2F%3E%3Ctext%20x%3D%2732%27%20y%3D%2747%27%20font-family%3D%27Georgia%2Cserif%27%20font-size%3D%2744%27%20font-weight%3D%27700%27%20fill%3D%27white%27%20text-anchor%3D%27middle%27%3EC%3C%2Ftext%3E%3C%2Fsvg%3E">
 <style>
 :root{--bg:#f4f6f5;--card:#fff;--ink:#16211b;--mute:#66736b;--line:#dfe5e1;--brand:#14532d;--brand2:#1d7a45;--bad:#b42318;--ok:#067647}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#18211c;--ink:#e8efe9;--mute:#98a79d;--line:#2a372f;--brand:#4ade80;--brand2:#86efac;--bad:#f87171;--ok:#4ade80}}
@@ -234,6 +235,7 @@ async function cargarYo() {
 }
 
 function vistaLogin() {
+  marcaPestana(true);
   $('#app').innerHTML = `<div class="login">
     <h1 class="marca" style="text-align:center;color:var(--brand);margin-bottom:4px">${esc(NOMBRE_PLATAFORMA)}</h1>
     <p class="mute" style="text-align:center;margin:0 0 14px">Administra tu negocio de préstamos</p>
@@ -271,12 +273,43 @@ function tabsVisibles() {
   if (can('prestamos', 'ver')) t.push('prestamos');
   if (can('reportes', 'ver')) t.push('estadisticas');
   if (can('personas', 'ver')) t.push('personas');
-  if (me && me.es_admin) t.push('roles', 'usuarios', 'config');
+  if (me && me.es_admin) t.push('usuarios', 'config');
   return t;
 }
-const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Usuarios', config: 'Ajustes', cuenta: 'Mi clave', negocios: 'Negocios' };
+
+/* ---------------- TÍTULO Y LOGO DE LA PESTAÑA ---------------- */
+const FAV_CAPITALIA = 'data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2714%27%20fill%3D%27%2314532d%27%2F%3E%3Ctext%20x%3D%2732%27%20y%3D%2747%27%20font-family%3D%27Georgia%2Cserif%27%20font-size%3D%2744%27%20font-weight%3D%27700%27%20fill%3D%27white%27%20text-anchor%3D%27middle%27%3EC%3C%2Ftext%3E%3C%2Fsvg%3E';
+function inicialesNegocio(nom) {
+  const ruido = /^(de|del|la|las|el|los|y|e|inversiones|prestamos|préstamos|creditos|créditos|capital|negocio|empresa|grupo|sas|s\.a\.s)$/i;
+  const w = String(nom || '').trim().split(/\s+/).filter(x => x && !ruido.test(x));
+  if (!w.length) return String(nom || 'C').trim().slice(0, 2).toUpperCase() || 'C';
+  if (/^[A-ZÁÉÍÓÚÑ]{2,3}$/.test(w[0])) return w[0];
+  return w.length > 1 ? (w[0][0] + w[1][0]).toUpperCase() : w[0].slice(0, 2).toUpperCase();
+}
+function favNegocio() {
+  if (negocio.logo) return negocio.logo;
+  try {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const x = cv.getContext('2d');
+    x.fillStyle = '#14532d'; x.beginPath(); x.arc(32, 32, 32, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = 'bold 28px Arial, sans-serif';
+    x.fillText(inicialesNegocio(negocio.nombre), 32, 34);
+    return cv.toDataURL('image/png');
+  } catch (e) { return FAV_CAPITALIA; }
+}
+function marcaPestana(sinSesion) {
+  try {
+    const f = document.getElementById('fav');
+    if (sinSesion || !me) { document.title = NOMBRE_PLATAFORMA; if (f) f.href = FAV_CAPITALIA; return; }
+    if (me.es_plataforma) { document.title = NOMBRE_PLATAFORMA + ' - Panel'; if (f) f.href = FAV_CAPITALIA; return; }
+    document.title = NOMBRE_PLATAFORMA + ' - ' + (negocio.nombre || NOMBRE_NEGOCIO);
+    if (f) f.href = favNegocio();
+  } catch (e) {}
+}
+const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Equipo', config: 'Ajustes', cuenta: 'Mi clave', negocios: 'Negocios' };
 
 function render() {
+  marcaPestana();
   const t = tabsVisibles();
   $('#app').innerHTML = `
     <header><div class="hd-id">${!me.es_plataforma && negocio.logo ? `<img class="hd-logo" alt="" src="${negocio.logo}">` : ''}<div><b${me.es_plataforma ? ' class="marca"' : ''}>${esc(me.es_plataforma ? NOMBRE_PLATAFORMA : negocio.nombre)}</b><small>${esc(me.nombre)}${me.es_plataforma ? ' · Dueño de la plataforma' : me.es_admin ? ' · Administrador' : ''}</small></div></div><div class="hd-btns"><button class="sec sm" style="color:#fff;border-color:#ffffff55" id="clave">Mi clave</button><button class="sec sm" style="color:#fff;border-color:#ffffff55" id="salir">Salir</button></div></header>
@@ -417,18 +450,21 @@ async function vUsuarios() {
   if (error) { v.innerHTML = `<div class="msg err">${esc(error.message)}</div>`; return; }
   const bloqueados = new Map((bloq || []).map(b => [b.id, b.bloqueado_hasta]));
   const hora = s => new Date(s).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-  const opciones = sel => '<option value="">Sin rol</option>' + (roles || []).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
+  const nomRol = new Map((roles || []).map(r => [r.id, r.nombre]));
+  const opciones = sel => '<option value="">Sin rol (no puede entrar)</option>' + (roles || []).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
   v.innerHTML = `${avisoHtml()}
-    <div class="card"><h2>Nuevo usuario</h2>
+    <div class="card"><h2>Agregar a tu equipo</h2>
       <p class="mute" style="font-size:13px;margin-top:0">Solo tú puedes crear usuarios. Cada usuario entra con <b>usuario@${esc(negocio.codigo)}</b> y su clave.</p>
       <label>Nombre</label><input id="u-nom">
       <label>Usuario</label><input id="u-mail" autocapitalize="none" spellcheck="false" placeholder="Ej: maria, cobrador1">
       <label>Clave inicial</label><input id="u-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
-      <label>Rol</label><select id="u-rol">${opciones('')}</select>
+      <label>Rol</label><select id="u-rol"><option value="">Elige el rol</option>${(roles || []).map(r => '<option value="' + r.id + '">' + esc(r.nombre) + '</option>').join('')}</select>
+      ${(roles || []).length ? '' : '<div class="msg err" style="margin-top:8px">Tu negocio todavía no tiene los roles Cobrador y Supervisor. Corre el archivo 12_roles.sql en Supabase y recarga.</div>'}
+      <p class="mute" style="font-size:12.5px;margin:8px 0 0"><b>Cobrador:</b> ve clientes y préstamos y registra pagos.<br><b>Supervisor:</b> además crea clientes y préstamos, edita clientes y ve estadísticas.<br>Ninguno puede eliminar, anular ni refinanciar: eso es solo tuyo.</p>
       <div style="margin-top:12px"><button id="u-add">Crear usuario</button></div></div>
-    <div class="card"><h2>Usuarios</h2>${us.map(u => `
+    <div class="card"><h2>Tu equipo</h2>${us.map(u => `
       <div class="item ${u.activo ? '' : 'off'}">
-        <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">${esc(cuentaDe(u))}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : ''}${u.activo ? '' : '<span class="tag">inactivo</span>'}${bloqueados.has(u.id) ? `<span class="tag bad">bloqueado hasta ${hora(bloqueados.get(u.id))}</span>` : ''}</div></div>
+        <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">${esc(cuentaDe(u))}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : (nomRol.get(u.role_id) ? '<span class="tag">' + esc(nomRol.get(u.role_id)) + '</span>' : '<span class="tag bad">sin rol</span>')}${u.activo ? '' : '<span class="tag">inactivo</span>'}${bloqueados.has(u.id) ? `<span class="tag bad">bloqueado hasta ${hora(bloqueados.get(u.id))}</span>` : ''}</div></div>
         ${u.es_admin ? '' : `<div class="row" style="margin-top:8px;flex-wrap:wrap"><select data-rol="${u.id}">${opciones(u.role_id)}</select>
           <span><button class="sec sm" data-clave="${u.id}">Cambiar clave</button> <button class="sec sm" data-uact="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>${bloqueados.has(u.id) ? ` <button class="sm" data-desb="${u.id}">Desbloquear</button>` : ''}</span></div>
           <div class="row" id="ck-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 6)" id="ck-i-${u.id}"><button class="sm" data-ckgo="${u.id}">Guardar</button></div>`}
@@ -704,7 +740,7 @@ async function vCuenta() {
       </div></div>` : ''}
 
     ${verDocs && c.estado !== 'anulado' ? `<div class="card"><h2>Enviar al cliente por WhatsApp</h2>
-      <p class="mute" style="margin-top:0;font-size:13px">Abre directo el chat de este cliente con el mensaje listo. Los documentos van como un enlace dentro del mensaje. ${per.telefono ? 'Teléfono del cliente: ' + esc(per.telefono) + '.' : '<b>Este cliente no tiene teléfono registrado.</b>'}</p>
+      <p class="mute" style="margin-top:0;font-size:13px">Abre directo el chat de este cliente con el mensaje ya escrito, con su información. ${per.telefono ? 'Teléfono del cliente: ' + esc(per.telefono) + '.' : '<b>Este cliente no tiene teléfono registrado.</b>'}</p>
       <label>¿Qué le envías?</label><select id="wa-doc">
         ${vigente ? '<option value="cobro">' + (k.mora ? 'Nota de cobro (cuotas vencidas)' : 'Recordatorio de próxima cuota') + '</option>' : ''}
         ${c.estado === 'pagado' ? '<option value="paz">Paz y salvo</option>' : ''}
@@ -712,7 +748,7 @@ async function vCuenta() {
         ${ref ? '<option value="refi">Documento de refinanciación</option>' : ''}
         ${pagos.some(p => p.estado === 'activo' && p.metodo !== 'refinanciación') ? '<option value="recibo">Recibo del último pago</option>' : ''}</select>
       <div id="wa-msg"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"><button id="wa-go">Enviar por WhatsApp</button><button class="sec" id="wa-chat">Solo el mensaje, sin documento</button></div></div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"><button id="wa-go">Enviar por WhatsApp</button></div></div>` : ''}
 
     ${puedeRefi ? `<details class="card" id="refi"><summary><b>Refinanciar este préstamo</b></summary>
       <p class="mute" style="font-size:13px">Se cancela <b>todo</b> lo que el cliente debe hoy (capital, intereses y lo vencido) y se abre un préstamo nuevo. Al cliente solo se le entrega la diferencia.</p>
@@ -851,15 +887,14 @@ async function vCuenta() {
     };
   }
   if ($('#wa-go')) {
-    const ir = async solo => {
+    const ir = async () => {
       const out = $('#wa-msg'); out.innerHTML = '';
       try {
-        const t = await enviarWa($('#wa-doc').value, c, k, per, pagos, solo);
+        const t = await enviarWa($('#wa-doc').value, c, k, per, pagos);
         if (t) out.innerHTML = '<div class="msg ok">' + esc(t) + '</div>';
       } catch (e) { out.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }
     };
-    $('#wa-go').onclick = () => ir(false);
-    $('#wa-chat').onclick = () => ir(true);
+    $('#wa-go').onclick = () => ir();
   }
 }
 
@@ -878,36 +913,13 @@ function pdfWa(tipo, c, k, per, pagos) {
     return capturaPdf;
   } finally { capturaPdf = null; }
 }
-async function subirDoc(r) {
-  if (!negocio.id || !sb.storage) throw new Error('sin almacenamiento');
-  const ruta = negocio.id + '/' + Date.now() + '-' + r.nombre.replace(/[^A-Za-z0-9._-]/g, '_');
-  const up = await sb.storage.from('documentos').upload(ruta, r.blob, { contentType: 'application/pdf' });
-  if (up.error) throw new Error(up.error.message);
-  const f = await sb.storage.from('documentos').createSignedUrl(ruta, 7 * 24 * 3600);
-  if (f.error || !f.data) throw new Error('sin enlace');
-  return f.data.signedUrl;
-}
-async function enviarWa(tipo, c, k, per, pagos, soloChat) {
+async function enviarWa(tipo, c, k, per, pagos) {
   const tel = telWa(per.telefono);
   if (!tel) throw new Error('Este cliente no tiene teléfono registrado. Agrégalo en Clientes.');
-  const abrir = msg => window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), '_blank');
-  const msg0 = mensajeWa(tipo, c, k, per, pagos);
-  if (!msg0) throw new Error('Ese documento no aplica para este préstamo.');
-  // El cobro es solo un mensaje (sin PDF); lo demás lleva el documento
-  if (tipo === 'cobro' || soloChat) { abrir(msg0); return 'Se abrió el chat de ' + (per.nombre || 'el cliente') + ' con el mensaje listo.'; }
-  const r = pdfWa(tipo, c, k, per, pagos);
-  if (!r || !r.blob) throw new Error('No se pudo generar el documento.');
-  try {
-    const url = await subirDoc(r);
-    abrir(mensajeWa(tipo, c, k, per, pagos, url));
-    return 'Se abrió el chat de ' + (per.nombre || 'el cliente') + ' con el mensaje y el enlace al documento (válido por 7 días).';
-  } catch (e) {
-    // Plan B: se descarga el PDF y se abre el chat; el PDF se adjunta con el clip
-    const a = document.createElement('a'); a.href = URL.createObjectURL(r.blob); a.download = r.nombre; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    abrir(msg0);
-    return 'No se pudo crear el enlace, así que se descargó el PDF y se abrió el chat. En WhatsApp pulsa el clip y adjunta el archivo descargado.';
-  }
+  const msg = mensajeWa(tipo, c, k, per, pagos);
+  if (!msg) throw new Error('Ese mensaje no aplica para este préstamo.');
+  window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), '_blank');
+  return 'Se abrió el chat de ' + (per.nombre || 'el cliente') + ' con el mensaje listo. Solo falta pulsar enviar.';
 }
 
 function generar(fn) {
@@ -1219,7 +1231,6 @@ const mediosPagoLineas = () => [
 const bloqueMedios = (pre = '• ') => { const l = mediosPagoLineas(); return l.length ? l.map(x => pre + x).join('\n') : ''; };
 const numsCuotas = (qs, total) => qs.length === 1 ? `Cuota ${qs[0].numero} de ${total}` : `Cuotas ${qs.map(q => q.numero).join(', ')} de ${total}`;
 const cierreWa = (c, ref) => `${negocio.nombre}`;
-const enlaceDoc = url => url ? `\n\nAquí puedes ver tu documento (el enlace funciona por 7 días):\n${url}` : '';
 
 // Cobro o recordatorio. Devuelve '' si el préstamo no tiene nada pendiente.
 function msgCobro(c, k, per) {
@@ -1236,14 +1247,19 @@ function msgCobro(c, k, per) {
 function msgDoc(tipo, c, k, per, pagos, url) {
   const n = primerNombre(per), ref = pad(c.consecutivo), neg = negocio.nombre;
   if (tipo === 'cobro') return msgCobro(c, k, per);
-  if (tipo === 'paz') return `Hola ${n}, ¡felicitaciones! 🙌 Tu préstamo Referencia ${ref} quedó pagado en su totalidad. Te enviamos tu paz y salvo. Gracias por tu cumplimiento. — ${neg}${enlaceDoc(url)}`;
+  if (tipo === 'paz') return `Hola ${n}, ¡felicitaciones! 🙌 Tu préstamo Referencia ${ref} quedó pagado en su totalidad. Te enviamos tu paz y salvo. Gracias por tu cumplimiento. — ${neg}`;
   if (tipo === 'amort') {
-    const m = bloqueMedios();
-    return `Hola ${n}, ¿cómo estás? Te enviamos la tabla de pagos de tu ${c.tipo === 'fiado' ? 'crédito' : 'préstamo'} Referencia ${ref}: ${money(c.capital)} a ${c.num_cuotas} cuotas ${(FREQ[c.frecuencia] || '').toLowerCase()}es. Ahí puedes ver cada fecha y valor.${m ? '\n\nMedios de pago:\n' + m : ''}\n\nCualquier duda, escríbenos. ¡Gracias! — ${neg}${enlaceDoc(url)}`;
+    const m = bloqueMedios(), fiado = c.tipo === 'fiado';
+    const fr = (FREQ[c.frecuencia] || '').toLowerCase();
+    const lin = (k.cu || []).map(q => {
+      const pagada = Number(q.pagado) >= Number(q.valor), parcial = !pagada && Number(q.pagado) > 0;
+      return `${q.numero}. ${fdate(q.fecha_vencimiento)} · ${money(q.valor)}${pagada ? ' ✅ pagada' : parcial ? ' (abonado ' + money(q.pagado) + ')' : ''}`;
+    }).join('\n');
+    return `Hola ${n}, ¿cómo estás? Te comparto la tabla de pagos de tu ${fiado ? 'crédito' : 'préstamo'} Referencia ${ref} 😊\n\n${fiado ? 'Valor del producto' : 'Préstamo'}: ${money(c.capital)}\nInterés: ${money(c.interes_total)}\nTotal a pagar: ${money(c.total)}\n\n📅 Cuotas (${c.num_cuotas} ${fr === 'mensual' ? 'mensuales' : fr + 'es'}):\n${lin}${k.saldo > 0 && k.saldo < Number(c.total) ? '\n\nSaldo pendiente: ' + money(k.saldo) : ''}${m ? '\n\nPuedes pagar por:\n' + m + '\n\nPor favor envíanos el comprobante de pago y escribe tu referencia ' + ref + ' al hacerlo.' : ''}\n\nCualquier duda, escríbenos. ¡Gracias! — ${neg}`;
   }
-  if (tipo === 'refi') return refActual ? `Hola ${n}, ¿cómo estás? Te enviamos el documento de tu refinanciación: se canceló tu Referencia ${pad(refActual.viejo.consecutivo)} con ${money(refActual.pago.monto)} y se abrió la Referencia ${pad(refActual.nuevo.consecutivo)} por ${money(refActual.nuevo.capital)}. Valor entregado: ${money(Math.max(0, Number(refActual.nuevo.capital) - Number(refActual.pago.monto)))}. Gracias por tu confianza. — ${neg}${enlaceDoc(url)}` : '';
+  if (tipo === 'refi') return refActual ? `Hola ${n}, ¿cómo estás? Te enviamos el documento de tu refinanciación: se canceló tu Referencia ${pad(refActual.viejo.consecutivo)} con ${money(refActual.pago.monto)} y se abrió la Referencia ${pad(refActual.nuevo.consecutivo)} por ${money(refActual.nuevo.capital)}. Valor entregado: ${money(Math.max(0, Number(refActual.nuevo.capital) - Number(refActual.pago.monto)))}. Gracias por tu confianza. — ${neg}` : '';
   const p = [...pagos].reverse().find(x => x.estado === 'activo' && x.metodo !== 'refinanciación');
-  return p ? `Hola ${n}, te confirmamos el recibo de tu pago de ${money(p.monto)} del ${fdate(p.fecha)}. El saldo actual de tu préstamo Referencia ${ref} es ${money(k.saldo)}. ¡Gracias por tu cumplimiento! — ${neg}${enlaceDoc(url)}` : '';
+  return p ? `Hola ${n}, te confirmamos el recibo de tu pago de ${money(p.monto)} del ${fdate(p.fecha)}. El saldo actual de tu préstamo Referencia ${ref} es ${money(k.saldo)}. ¡Gracias por tu cumplimiento! — ${neg}` : '';
 }
 
 // Medios de pago y QR dentro de los PDF

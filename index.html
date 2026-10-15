@@ -399,7 +399,7 @@ async function vPersonas(filtro = '') {
   const f = filtro.toLowerCase();
   const lista = (data || []).filter(p => !f || (p.nombre + p.cedula + p.telefono).toLowerCase().includes(f));
   v.innerHTML = `${avisoHtml()}
-    ${can('personas', 'crear') ? '<details class="card" id="det-impc"><summary><b>Importar clientes masivamente</b></summary><div id="imp-c"></div></details>' : ''}
+    ${can('personas', 'crear') ? '<details class="card" id="det-impc"><summary><b>Carga masiva (clientes y préstamos)</b></summary><div id="imp-c"></div></details>' : ''}
     ${(() => { const e = lista.find(p => p.id === editCli); return e ? `<div class="card" id="ec"><h2>Editar cliente</h2>
       <label>Cédula *</label><input id="ec-ced" inputmode="numeric" value="${esc(e.cedula)}">
       <label>Nombre completo *</label><input id="ec-nom" value="${esc(e.nombre)}">
@@ -436,7 +436,7 @@ async function vPersonas(filtro = '') {
     setAviso(error ? (error.code === '23505' ? 'Ya existe un cliente con esa cédula.' : error.message) : 'Cliente registrado.', error ? 'err' : 'ok');
     vPersonas();
   };
-  if ($('#det-impc')) $('#det-impc').ontoggle = () => { if ($('#det-impc').open && !$('#imp-c').innerHTML) montarImportar($('#imp-c'), 'clientes'); };
+  if ($('#det-impc')) $('#det-impc').ontoggle = () => { if ($('#det-impc').open && !$('#imp-c').innerHTML) montarImportar($('#imp-c'), 'todo'); };
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editCli = b.dataset.edit; vPersonas($('#p-q').value); setTimeout(() => { const e = $('#ec'); if (e) e.scrollIntoView({ block: 'center' }); }, 50); });
   if ($('#ec-cancel')) $('#ec-cancel').onclick = () => { editCli = null; vPersonas($('#p-q').value); };
   if ($('#ec-save')) $('#ec-save').onclick = async () => {
@@ -673,14 +673,12 @@ async function vPrestamos() {
       <div class="msg ok" id="n-prev"></div>
       <div id="n-msg"></div>
       <button id="n-go">Crear préstamo</button></details>` : ''}
-    ${can('prestamos', 'crear') && can('pagos', 'crear') ? '<details class="card" id="det-imp"><summary><b>Importar préstamos que ya tienes (Excel)</b></summary><div id="imp-p"></div></details>' : ''}
     <div class="card">
       <div class="row"><select id="f-pres" style="flex:1">${Object.entries(NOMBRES_FILTRO).map(([val, t]) => `<option value="${val}" ${val === filtroPres ? 'selected' : ''}>${t}</option>`).join('')}</select>
         <select id="v-pres" style="flex:0 0 112px"><option value="tabla" ${vistaPres === 'tabla' ? 'selected' : ''}>Tabla</option><option value="tarjetas" ${vistaPres === 'tarjetas' ? 'selected' : ''}>Tarjetas</option></select></div>
       ${can('prestamos', 'exportar') && lista.length ? '<p style="margin:10px 0 0"><button class="sec sm" id="b-rep">Descargar estado de cartera (PDF)</button></p>' : ''}
       <div style="margin-top:8px">${lista.length ? (vistaPres === 'tabla' ? tablaPrestamos(lista) : tarjetasPrestamos(lista)) : '<p class="mute">No hay préstamos en esta vista.</p>'}</div></div>`;
 
-  if ($('#det-imp')) $('#det-imp').ontoggle = () => { if ($('#det-imp').open && !$('#imp-p').innerHTML) montarImportar($('#imp-p'), 'prestamos'); };
   document.querySelectorAll('.avs').forEach(el => el.onclick = () => { filtroPres = el.dataset.f; vPrestamos(); });
   if ($('#b-cad')) { let ci = 0; $('#b-cad').onclick = () => {
     const c = cadena[ci]; window.open(enlaceCobro(c, c.k), '_blank'); ci++;
@@ -1779,12 +1777,12 @@ function analizarLibro(wb, modo) {
 }
 const lotes = (a, n = 200) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 function montarImportar(v, modo) {
-  const puedeC = modo === 'clientes' && can('personas', 'crear'), puedeP = modo === 'prestamos' && can('prestamos', 'crear') && can('pagos', 'crear');
-  const cl = modo === 'clientes';
-  v.innerHTML = `<div class="card"><h2>${cl ? 'Importar clientes masivamente' : 'Importar préstamos que ya tienes'}</h2>
-      <p class="mute" style="margin-top:0">${cl ? 'Registra de una vez muchos clientes desde una hoja de Excel.' : 'Carga los préstamos que ya estaban en curso, con sus cuotas pagadas y las que faltan. Los clientes deben estar registrados antes (se enlazan por la cédula).'}</p>
-      <p class="mute" style="font-size:13px"><b>Recomendación:</b> la carga masiva se hace en Excel desde un computador. Si vas a cargar uno o pocos, usa el formulario${cl ? ' «Nuevo cliente» de arriba' : ' «Nuevo préstamo o crédito» de arriba'}, que es más rápido y funciona bien desde el celular.</p>
-      <p><b>1.</b> Descarga la plantilla y llena la hoja «${cl ? 'Clientes' : 'Préstamos'}».</p>
+  const puedeC = modo !== 'prestamos' && can('personas', 'crear'), puedeP = modo !== 'clientes' && can('prestamos', 'crear') && can('pagos', 'crear');
+  const cl = modo === 'clientes', todo = modo === 'todo';
+  v.innerHTML = `<div class="card"><h2>${todo ? 'Carga masiva de clientes y préstamos' : cl ? 'Importar clientes masivamente' : 'Importar préstamos que ya tienes'}</h2>
+      <p class="mute" style="margin-top:0">${todo ? 'Carga de una vez muchos clientes y los préstamos que ya tienes en curso, con sus cuotas pagadas y las que faltan. Primero se crean los clientes y después sus préstamos, enlazados por la cédula.' : cl ? 'Registra de una vez muchos clientes desde una hoja de Excel.' : 'Carga los préstamos que ya estaban en curso, con sus cuotas pagadas y las que faltan. Los clientes deben estar registrados antes (se enlazan por la cédula).'}</p>
+      <p class="mute" style="font-size:13px"><b>Recomendación:</b> la carga masiva se hace en Excel desde un computador. Si vas a cargar uno o pocos, usa ${todo ? 'los formularios «Registrar cliente» (abajo) y «Nuevo préstamo o crédito» (en Préstamos)' : 'el formulario'}, que es más rápido y funciona bien desde el celular.</p>
+      <p><b>1.</b> Descarga la plantilla y llena ${todo ? 'las hojas «Clientes» y «Préstamos» (en Préstamos eliges al cliente de una lista)' : 'la hoja «' + (cl ? 'Clientes' : 'Préstamos') + '»'}.</p>
       <button class="sec" id="i-plantilla">Descargar plantilla de Excel</button>
       <p style="margin-top:18px"><b>2.</b> Sube el archivo lleno. Antes de cargar nada, verás una revisión.</p>
       <input type="file" id="i-file" accept=".xlsx,.xlsm">
@@ -1812,7 +1810,7 @@ function revision(res, puedeC, puedeP, modo) {
   const hayAlgo = (puedeC && d.clientes.length) || (puedeP && d.prestamos.length);
   res.innerHTML = `<div class="card"><h2>Revisión</h2>
     <div class="stats" style="margin-bottom:8px">
-      ${modo === 'clientes' ? `<div class="stat"><span>Clientes listos</span><b>${d.clientes.length}</b><small class="mute">${d.malC.length} con problemas</small></div>` : `<div class="stat"><span>Préstamos listos</span><b>${d.prestamos.length}</b><small class="mute">${d.malP.length} con problemas</small></div>`}</div>
+      ${modo !== 'prestamos' ? `<div class="stat"><span>Clientes listos</span><b>${d.clientes.length}</b><small class="mute">${d.malC.length} con problemas</small></div>` : ''}${modo !== 'clientes' ? `<div class="stat"><span>Préstamos listos</span><b>${d.prestamos.length}</b><small class="mute">${d.malP.length} con problemas</small></div>` : ''}</div>
     ${lista(d.malC, 'Clientes')}${lista(d.malP, 'Préstamos')}
     ${d.prestamos.length ? `<h3 style="font-size:14px;margin:12px 0 4px">Cómo quedarán los préstamos${d.prestamos.length > 50 ? ' (primeros 50)' : ''}</h3>
       <div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Cédula</th><th>Capital</th><th>Pagadas</th><th>Debe</th><th>Saldo aprox.</th></tr></thead><tbody>${filasP}</tbody></table></div>` : ''}
@@ -1841,10 +1839,11 @@ async function cargarTodo(puedeC, puedeP, modo) {
   const err = (l, hoja) => l.length ? `<details open><summary>Avisos de «${hoja}» (${l.length})</summary><ul class="prob">${l.map(x => `<li>Fila ${x.fila}: ${esc(x.motivo)}</li>`).join('')}</ul></details>` : '';
   fin.innerHTML = `<div class="card"><h2>Resultado</h2>
     <div class="stats" style="margin-bottom:8px">
-      ${modo === 'clientes' ? `<div class="stat"><span>Clientes cargados</span><b>${resumen.C.creados}</b><small class="mute">${resumen.C.omitidos} ya existían</small></div>` : `<div class="stat"><span>Préstamos cargados</span><b>${resumen.P.creados}</b><small class="mute">${resumen.P.omitidos} ya estaban</small></div>`}</div>
-    ${modo === 'clientes' ? err(resumen.C.errores, 'Clientes') : err(resumen.P.errores, 'Préstamos')}
-    <p style="margin-bottom:0"><button id="i-ver">${modo === 'clientes' ? 'Ver clientes' : 'Ver préstamos'}</button></p></div>`;
-  $('#i-ver').onclick = () => { tab = modo === 'clientes' ? 'personas' : 'prestamos'; cuentaSel = null; render(); };
+      ${modo !== 'prestamos' ? `<div class="stat"><span>Clientes cargados</span><b>${resumen.C.creados}</b><small class="mute">${resumen.C.omitidos} ya existían</small></div>` : ''}${modo !== 'clientes' ? `<div class="stat"><span>Préstamos cargados</span><b>${resumen.P.creados}</b><small class="mute">${resumen.P.omitidos} ya estaban</small></div>` : ''}</div>
+    ${modo !== 'prestamos' ? err(resumen.C.errores, 'Clientes') : ''}${modo !== 'clientes' ? err(resumen.P.errores, 'Préstamos') : ''}
+    <p style="margin-bottom:0">${modo !== 'prestamos' ? '<button class="sec" id="i-verc">Ver clientes</button> ' : ''}${modo !== 'clientes' ? '<button id="i-ver">Ver préstamos</button>' : ''}</p></div>`;
+  if ($('#i-ver')) $('#i-ver').onclick = () => { tab = 'prestamos'; cuentaSel = null; render(); };
+  if ($('#i-verc')) $('#i-verc').onclick = () => { tab = 'personas'; cuentaSel = null; render(); };
 }
 
 /* ---------------- EXPORTAR TODO A EXCEL ---------------- */

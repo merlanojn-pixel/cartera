@@ -674,6 +674,7 @@ async function vPrestamos() {
       <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
       <p class="mute" style="font-size:12px;margin:4px 0 0">Ya viene con tu tasa habitual, pero puedes cambiarla en cada operación.</p>
       <label>Frecuencia de pago</label><select id="n-fre"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option></select>
+      <p class="mute" style="font-size:12px;margin:4px 0 0">Las cuotas se cobran en fechas fijas: semanal, cada sábado; quincenal, el 15 y el 30; mensual, el 30 (en febrero, el último día). La primera cuota es la primera fecha después del préstamo.</p>
       <label>Número de cuotas</label><input id="n-cuo" inputmode="numeric" value="3">
       <label>Fecha de desembolso</label><input id="n-fec" type="date" value="${h}">
       <div class="msg ok" id="n-prev"></div>

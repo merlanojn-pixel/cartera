@@ -200,6 +200,7 @@ let me = null, perms = new Set(), tab = 'prestamos', aviso = null, rolSel = null
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const can = (m, a) => !!me && (me.es_admin || perms.has(m + ':' + a));
+const alertaEn = (id, t) => { const e = $('#' + id); if (e) { e.innerHTML = '<div class="msg err">' + esc(t) + '</div>'; try { e.scrollIntoView({ block: 'nearest' }); } catch (x) {} } };
 const normCed = s => String(s || '').replace(/[\s.\-]/g, '');
 const setAviso = (t, tipo = 'err') => { aviso = t ? { t, tipo } : null; };
 const avisoHtml = () => aviso ? `<div class="msg ${aviso.tipo}">${esc(aviso.t)}</div>` : '';
@@ -408,7 +409,7 @@ async function vPersonas(filtro = '') {
       <label>Dirección</label><input id="ec-dir" value="${esc(e.direccion || '')}">
       <label>Barrio o zona de cobro</label><input id="ec-bar" value="${esc(e.barrio || '')}">
       <label>Notas</label><textarea id="ec-not" rows="2">${esc(e.notas || '')}</textarea>
-      <div style="margin-top:12px;display:flex;gap:8px"><button id="ec-save">Guardar cambios</button><button class="sec" id="ec-cancel">Cancelar</button></div></div>` : ''; })()}
+      <div id="ec-msg"></div><div style="margin-top:12px;display:flex;gap:8px"><button id="ec-save">Guardar cambios</button><button class="sec" id="ec-cancel">Cancelar</button></div></div>` : ''; })()}
     ${can('personas', 'crear') ? `<div class="card"><h2>Registrar cliente</h2>
       <label>Cédula *</label><input id="p-ced" inputmode="numeric">
       <label>Nombre completo *</label><input id="p-nom">
@@ -416,6 +417,7 @@ async function vPersonas(filtro = '') {
       <label>Dirección</label><input id="p-dir">
       <label>Barrio o zona de cobro</label><input id="p-bar">
       <label>Notas</label><textarea id="p-not" rows="2"></textarea>
+      <div id="p-msg"></div>
       <div style="margin-top:12px"><button id="p-save">Guardar</button></div></div>` : ''}
     <div class="card"><input id="p-q" placeholder="Buscar por nombre, cédula o teléfono" value="${esc(filtro)}">
       <div style="margin-top:8px">${lista.length ? lista.map(p => `
@@ -432,25 +434,25 @@ async function vPersonas(filtro = '') {
     const r = { cedula: normCed($('#p-ced').value), nombre: $('#p-nom').value.trim(), telefono: $('#p-tel').value.trim(),
       tipo: 'cliente', direccion: $('#p-dir').value.trim() || null, barrio: $('#p-bar').value.trim() || null,
       notas: $('#p-not').value.trim() || null };
-    if (!r.cedula || !r.nombre || !r.telefono) { setAviso('Cédula, nombre y teléfono son obligatorios.'); return vPersonas(); }
+    if (!r.cedula || !r.nombre || !r.telefono) { alertaEn('p-msg', 'Faltan datos: la cédula, el nombre y el teléfono son obligatorios. Lo que escribiste sigue aquí.'); return; }
     const { data: ya } = await sb.from('personas').select('nombre').eq('cedula', r.cedula).limit(1);
-    if (ya && ya.length) { setAviso('Ya existe: ' + ya[0].nombre + ', con esa cédula.'); return vPersonas(); }
+    if (ya && ya.length) { alertaEn('p-msg', 'Ya existe: ' + ya[0].nombre + ', con esa cédula.'); return; }
     const { error } = await sb.from('personas').insert(r);
-    setAviso(error ? (error.code === '23505' ? 'Ya existe un cliente con esa cédula.' : error.message) : 'Cliente registrado.', error ? 'err' : 'ok');
-    vPersonas();
+    if (error) { alertaEn('p-msg', error.code === '23505' ? 'Ya existe un cliente con esa cédula.' : error.message); return; }
+    setAviso('Cliente registrado.', 'ok'); vPersonas();
   };
   if ($('#det-impc')) $('#det-impc').ontoggle = () => { if ($('#det-impc').open && !$('#imp-c').innerHTML) montarImportar($('#imp-c'), 'todo'); };
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editCli = b.dataset.edit; vPersonas($('#p-q').value); setTimeout(() => { const e = $('#ec'); if (e) e.scrollIntoView({ block: 'center' }); }, 50); });
   if ($('#ec-cancel')) $('#ec-cancel').onclick = () => { editCli = null; vPersonas($('#p-q').value); };
   if ($('#ec-save')) $('#ec-save').onclick = async () => {
     const r = { cedula: normCed($('#ec-ced').value), nombre: $('#ec-nom').value.trim(), telefono: $('#ec-tel').value.trim(), direccion: $('#ec-dir').value.trim() || null, barrio: $('#ec-bar').value.trim() || null, notas: $('#ec-not').value.trim() || null };
-    if (!r.cedula || !r.nombre || !r.telefono) { setAviso('Cédula, nombre y teléfono son obligatorios.'); return vPersonas(); }
+    if (!r.cedula || !r.nombre || !r.telefono) { alertaEn('ec-msg', 'Faltan datos: la cédula, el nombre y el teléfono son obligatorios.'); return; }
     const { data: ya } = await sb.from('personas').select('id,nombre').eq('cedula', r.cedula).limit(5);
     const otro = (ya || []).find(x => x.id !== editCli);
-    if (otro) { setAviso('Ya existe: ' + otro.nombre + ', con esa cédula.'); return vPersonas(); }
+    if (otro) { alertaEn('ec-msg', 'Ya existe: ' + otro.nombre + ', con esa cédula.'); return; }
     const { error } = await sb.from('personas').update(r).eq('id', editCli);
-    if (!error) editCli = null;
-    setAviso(error ? (error.code === '23505' ? 'Ya existe un cliente con esa cédula.' : error.message) : 'Cliente actualizado.', error ? 'err' : 'ok'); vPersonas();
+    if (error) { alertaEn('ec-msg', error.code === '23505' ? 'Ya existe un cliente con esa cédula.' : error.message); return; }
+    editCli = null; setAviso('Cliente actualizado.', 'ok'); vPersonas();
   };
   document.querySelectorAll('[data-borrar]').forEach(b => b.onclick = async () => {
     const p = lista.find(x => x.id === b.dataset.borrar);
@@ -534,6 +536,7 @@ async function vUsuarios() {
       <label>Rol</label><select id="u-rol"><option value="">Elige el rol</option>${(roles || []).map(r => '<option value="' + r.id + '">' + esc(r.nombre) + '</option>').join('')}</select>
       ${(roles || []).length ? '' : '<div class="msg err" style="margin-top:8px">Tu negocio todavía no tiene los roles Cobrador y Supervisor. Corre el archivo 12_roles.sql en Supabase y recarga.</div>'}
       <p class="mute" style="font-size:12.5px;margin:8px 0 0"><b>Cobrador:</b> ve clientes y préstamos y registra pagos.<br><b>Supervisor:</b> además crea clientes y préstamos, edita clientes y ve estadísticas.<br>Ninguno puede eliminar, anular ni refinanciar: eso es solo tuyo.</p>
+      <div id="u-msg"></div>
       <div style="margin-top:12px"><button id="u-add">Crear usuario</button></div></div>
     <div class="card"><h2>Tu equipo</h2>${us.map(u => `
       <div class="item ${u.activo ? '' : 'off'}">
@@ -544,11 +547,12 @@ async function vUsuarios() {
       </div>`).join('')}</div>`;
   $('#u-add').onclick = async () => {
     const nombre = $('#u-nom').value.trim(), usuario = limpiarUsuario($('#u-mail').value), password = $('#u-pass').value, rol = $('#u-rol').value;
-    if (/[^a-z0-9._-]/.test(usuario) || usuario.length < 3) { setAviso('El usuario debe tener mínimo 3 letras o números, sin espacios, tildes ni @.'); return vUsuarios(); }
-    if (!nombre || !usuario || password.length < 6 || !rol) { setAviso('Completa nombre, usuario, clave (mínimo 6) y rol.'); return vUsuarios(); }
+    if (/[^a-z0-9._-]/.test(usuario) || usuario.length < 3) { alertaEn('u-msg', 'El usuario debe tener mínimo 3 letras o números, sin espacios, tildes ni @.'); return; }
+    if (!nombre || !usuario || password.length < 6 || !rol) { alertaEn('u-msg', 'Completa nombre, usuario, clave (mínimo 6) y rol.'); return; }
     $('#u-add').disabled = true;
     const { error: e } = await sb.rpc('admin_crear_usuario', { p_nombre: nombre, p_usuario: usuario, p_clave: password, p_rol: rol });
-    setAviso(e ? e.message : `Usuario creado. Debe entrar con ${usuario}@${negocio.codigo} y la clave que le diste.`, e ? 'err' : 'ok'); vUsuarios();
+    if (e) { alertaEn('u-msg', e.message); $('#u-add').disabled = false; return; }
+    setAviso(`Usuario creado. Debe entrar con ${usuario}@${negocio.codigo} y la clave que le diste.`, 'ok'); vUsuarios();
   };
   document.querySelectorAll('[data-rol]').forEach(s => s.onchange = async () => {
     const { error } = await sb.from('perfiles').update({ role_id: s.value || null }).eq('id', s.dataset.rol);
@@ -671,8 +675,11 @@ async function vPrestamos() {
       <label>Cliente</label><input type="hidden" id="n-per" value=""><input id="n-busca" autocomplete="off" enterkeyhint="search" placeholder="Escribe el nombre o la cédula"><div id="n-res" class="res-lista"></div><div id="n-elegido" class="cli-elegido" hidden></div>
       <div id="n-desc-w" hidden><label>Producto que se entrega</label><input id="n-desc" maxlength="200" placeholder="Ej: nevera, celular, mercancía"></div>
       <label id="n-cap-l">Capital prestado ($)</label><input id="n-cap" inputmode="numeric" data-miles placeholder="1.000.000" autocomplete="off">
-      <label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
-      <p class="mute" style="font-size:12px;margin:4px 0 0">Ya viene con tu tasa habitual, pero puedes cambiarla en cada operación.</p>
+      <div id="n-tasa-w"><label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
+      <p class="mute" style="font-size:12px;margin:4px 0 0">Ya viene con tu tasa habitual, pero puedes cambiarla en cada operación.</p></div>
+      <div id="n-fi-w" hidden><label>¿Cómo fijas el precio?</label><select id="n-modo"><option value="precio">Precio final (venta directa)</option><option value="pct">Porcentaje total sobre el valor inicial</option><option value="sin">Sin interés</option></select>
+        <div id="n-precio-w"><label>Precio final a crédito ($)</label><input id="n-precio" inputmode="numeric" data-miles placeholder="700.000" autocomplete="off"></div>
+        <div id="n-pct-w" hidden><label>Porcentaje total (%)</label><input id="n-pct" inputmode="decimal" placeholder="Ej: 20"><p class="mute" style="font-size:12px;margin:4px 0 0">Es el total de la venta, no se multiplica por los meses.</p></div></div>
       <label>Frecuencia de pago</label><select id="n-fre"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option></select>
       <p class="mute" style="font-size:12px;margin:4px 0 0">Las cuotas se cobran en fechas fijas: semanal, cada sábado; quincenal, el 15 y el 30; mensual, el 30 (en febrero, el último día). La primera cuota es la primera fecha después del préstamo.</p>
       <label>Número de cuotas</label><input id="n-cuo" inputmode="numeric" value="3">
@@ -699,17 +706,27 @@ async function vPrestamos() {
   document.querySelectorAll('[data-c]').forEach(el => el.onclick = () => { cuentaSel = el.dataset.c; setAviso(null); vPrestamos(); });
 
   if ($('#n-go')) {
+    const gananciaFi = cap => { const m = $('#n-modo').value; return m === 'precio' ? (entero($('#n-precio').value) || 0) - cap : m === 'pct' ? Math.round(cap * (decimal($('#n-pct').value) || 0) / 100) : 0; };
     const prev = () => {
+      if ($('#n-tipo').value === 'fiado') {
+        const cap = entero($('#n-cap').value), n = entero($('#n-cuo').value), m = $('#n-modo').value;
+        if (!cap || !n || (m === 'precio' && !entero($('#n-precio').value)) || (m === 'pct' && isNaN(decimal($('#n-pct').value)))) { $('#n-prev').innerHTML = 'Escribe el valor inicial, el precio (o porcentaje) y las cuotas para ver el cálculo.'; return; }
+        const g = gananciaFi(cap), tot = cap + g;
+        $('#n-prev').innerHTML = g < 0 ? 'El precio final no puede ser menor al valor inicial.' : `Precio a crédito: <b>${money(tot)}</b>${m === 'pct' ? ' (' + decimal($('#n-pct').value) + '% total)' : ''}<br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
+        return;
+      }
       const cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, n = entero($('#n-cuo').value);
       if (!cap || !n || isNaN(tasa)) { $('#n-prev').innerHTML = 'Escribe capital, tasa y cuotas para ver el cálculo.'; return; }
       const exacto = n / PERIODOS_MES[fre], meses = Math.ceil(exacto), inte = Math.round(cap * tasa / 100 * meses), tot = cap + inte;
       $('#n-prev').innerHTML = `Interés total: <b>${money(inte)}</b> (${tasa}% × ${meses} ${meses === 1 ? 'mes' : 'meses'}${Number.isInteger(exacto) ? '' : ', porque la cuota ' + n + ' cae en el ' + (ORD_MES[meses] || meses + '.º') + ' mes'})<br>Total a pagar: <b>${money(tot)}</b><br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
     };
-    ['n-cap', 'n-tasa', 'n-fre', 'n-cuo'].forEach(id => $('#' + id).oninput = prev);
+    ['n-cap', 'n-tasa', 'n-fre', 'n-cuo', 'n-precio', 'n-pct'].forEach(id => $('#' + id).oninput = prev);
+    $('#n-modo').onchange = () => { const m = $('#n-modo').value; $('#n-precio-w').hidden = m !== 'precio'; $('#n-pct-w').hidden = m !== 'pct'; prev(); };
     const alTipo = (cambiaTasa) => {
       const f = $('#n-tipo').value === 'fiado';
       $('#n-desc-w').hidden = !f;
-      $('#n-cap-l').textContent = f ? 'Valor del producto ($)' : 'Capital prestado ($)';
+      $('#n-cap-l').textContent = f ? 'Valor inicial del producto ($)' : 'Capital prestado ($)';
+      $('#n-tasa-w').hidden = f; $('#n-fi-w').hidden = !f;
       $('#n-go').textContent = f ? 'Crear crédito' : 'Crear préstamo';
       if (cambiaTasa) $('#n-tasa').value = tasaDe(f ? 'fiado' : 'prestamo');
       prev();
@@ -719,10 +736,14 @@ async function vPrestamos() {
     $('#n-go').onclick = async () => {
       const per = $('#n-per').value, cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, cuo = entero($('#n-cuo').value), fec = $('#n-fec').value;
       const tipo = $('#n-tipo').value, desc = $('#n-desc').value.trim();
-      if (!per || !cap || !cuo || !fec || isNaN(tasa)) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
+      const gFi = tipo === 'fiado' ? gananciaFi(cap || 0) : null;
+      if (tipo === 'fiado' && cap && $('#n-modo').value === 'precio' && !entero($('#n-precio').value)) { $('#n-msg').innerHTML = '<div class="msg err">Escribe el precio final de la venta.</div>'; return; }
+      if (tipo === 'fiado' && cap && $('#n-modo').value === 'pct' && (isNaN(decimal($('#n-pct').value)) || decimal($('#n-pct').value) < 0)) { $('#n-msg').innerHTML = '<div class="msg err">Escribe el porcentaje total.</div>'; return; }
+      if (tipo === 'fiado' && gFi < 0) { $('#n-msg').innerHTML = '<div class="msg err">El precio final no puede ser menor al valor inicial.</div>'; return; }
+      if (!per || !cap || !cuo || !fec || (tipo !== 'fiado' && isNaN(tasa))) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
       if (tipo === 'fiado' && !desc) { $('#n-msg').innerHTML = '<div class="msg err">Escribe qué producto se entrega.</div>'; return; }
       $('#n-go').disabled = true;
-      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, p_descripcion: tipo === 'fiado' ? desc : null });
+      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tipo === 'fiado' ? Math.min(9999, Math.round(gFi / cap * 10000) / 100) : tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, p_ganancia: gFi, p_descripcion: tipo === 'fiado' ? desc : null });
       if (error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; $('#n-go').disabled = false; return; }
       cuentaSel = data; setAviso(tipo === 'fiado' ? 'Crédito creado. Ya puedes descargar su tabla de pagos.' : 'Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
     };
@@ -774,7 +795,7 @@ async function vCuenta() {
       ${c.tipo === 'fiado' ? `<div class="mute">Producto a crédito${c.descripcion ? ': ' + esc(c.descripcion) : ''}</div>` : ''}
       <table class="matrix" style="margin-top:10px">
         <tr><td>${c.tipo === 'fiado' ? 'Valor del producto' : 'Capital'}</td><td style="text-align:right">${money(c.capital)}</td></tr>
-        <tr><td>${c.tipo === 'fiado' ? 'Financiación' : 'Interés'} (${Number(c.tasa_mensual)}% × ${mesesTxt(mesesDe(c))})</td><td style="text-align:right">${money(c.interes_total)}</td></tr>
+        <tr><td>${c.tipo === 'fiado' ? 'Ganancia de la venta' : 'Interés (' + Number(c.tasa_mensual) + '% × ' + mesesTxt(mesesDe(c)) + ')'}</td><td style="text-align:right">${money(c.interes_total)}</td></tr>
         <tr><td>Total a pagar</td><td style="text-align:right"><b>${money(c.total)}</b></td></tr>
         <tr><td>Pagado</td><td style="text-align:right">${money(k.pagado)}</td></tr>
         ${Number(c.descuento) > 0 ? `<tr><td>Descuento</td><td style="text-align:right">${money(c.descuento)}</td></tr>` : ''}
@@ -790,6 +811,7 @@ async function vCuenta() {
       <label>Fecha</label><input id="pg-fecha" type="date" value="${h}">
       <label>Forma de pago</label><select id="pg-met"><option>efectivo</option><option>transferencia</option><option>otro</option></select>
       <label>Nota (opcional)</label><input id="pg-nota">
+      <div id="pg-msg"></div>
       <div style="margin-top:12px"><button id="pg-go">Registrar pago</button></div></div>` : ''}
 
     <div class="card"><h2>Cuotas</h2>
@@ -845,7 +867,7 @@ async function vCuenta() {
       ${puedeEditar ? `<p class="mute" style="font-size:13px">Puedes cambiar los datos mientras el préstamo no tenga pagos. Las cuotas se recalculan y el número de referencia se conserva.</p>
       ${c.tipo === 'fiado' ? '<label>Producto</label><input id="ed-desc" value="' + esc(c.descripcion || '') + '">' : ''}
       <label>${c.tipo === 'fiado' ? 'Valor del producto' : 'Valor del préstamo'} ($)</label><input id="ed-cap" inputmode="numeric" data-miles value="${milesTxt(Number(c.capital))}">
-      <label>Interés mensual (%)</label><input id="ed-tasa" inputmode="decimal" value="${Number(c.tasa_mensual)}">
+      ${c.tipo === 'fiado' ? '<label>Precio final a crédito ($)</label><input id="ed-precio" inputmode="numeric" data-miles value="' + milesTxt(Number(c.total)) + '" autocomplete="off">' : '<label>Interés mensual (%)</label><input id="ed-tasa" inputmode="decimal" value="' + Number(c.tasa_mensual) + '">'}
       <label>Frecuencia</label><select id="ed-fre">${['semanal', 'quincenal', 'mensual'].map(f => '<option value="' + f + '"' + (c.frecuencia === f ? ' selected' : '') + '>' + f.charAt(0).toUpperCase() + f.slice(1) + '</option>').join('')}</select>
       <label>Número de cuotas</label><input id="ed-cuo" inputmode="numeric" value="${c.num_cuotas}">
       <label>Fecha de desembolso</label><input id="ed-fec" type="date" value="${c.fecha_desembolso}">
@@ -869,11 +891,12 @@ async function vCuenta() {
 
   if ($('#pg-go')) $('#pg-go').onclick = async () => {
     const monto = entero($('#pg-monto').value);
-    if (!monto) { setAviso('Escribe el valor del pago.'); return vCuenta(); }
+    if (!monto) { alertaEn('pg-msg', 'Escribe el valor del pago.'); return; }
     if (!confirm(`¿Registrar un pago de ${money(monto)} de ${per.nombre}?`)) return;
     $('#pg-go').disabled = true;
     const { error } = await sb.rpc('registrar_pago', { p_cuenta: c.id, p_monto: monto, p_fecha: $('#pg-fecha').value || h, p_metodo: $('#pg-met').value, p_nota: $('#pg-nota').value.trim() || null });
-    fin(error, 'Pago registrado. Ya puedes descargar el recibo.');
+    if (error) { alertaEn('pg-msg', error.message); $('#pg-go').disabled = false; return; }
+    fin(null, 'Pago registrado. Ya puedes descargar el recibo.');
   };
   document.querySelectorAll('[data-anpago]').forEach(b => b.onclick = async () => {
     const motivo = (prompt('Motivo de la anulación del pago:') || '').trim();
@@ -905,18 +928,24 @@ async function vCuenta() {
     docRecibo(c, k, per, pagos.find(p => p.id === b.dataset.rec))));
   if ($('#ed-go')) {
     const calcEd = () => {
-      const cap = entero($('#ed-cap').value), tasa = decimal($('#ed-tasa').value), fre = $('#ed-fre').value, n = entero($('#ed-cuo').value);
+      const cap = entero($('#ed-cap').value), fre = $('#ed-fre').value, n = entero($('#ed-cuo').value);
+      if (c.tipo === 'fiado') {
+        const precio = entero($('#ed-precio').value);
+        if (!cap || !n || !precio || precio < cap) return null;
+        return { cap, tasa: Math.min(9999, Math.round((precio - cap) / cap * 10000) / 100), fre, n, inte: precio - cap, tot: precio, g: precio - cap, fi: true };
+      }
+      const tasa = decimal($('#ed-tasa').value);
       if (!cap || !n || isNaN(tasa)) return null;
       const { meses, inte } = interesMes(cap, tasa, fre, n);
       return { cap, tasa, fre, n, meses, inte, tot: cap + inte };
     };
-    const prevEd = () => { const r = calcEd(); $('#ed-prev').innerHTML = r ? 'Interés ' + money(r.inte) + ' (' + r.tasa + '% × ' + mesesTxt(r.meses) + ') · Total <b>' + money(r.tot) + '</b> · ' + r.n + ' cuotas de <b>' + money(Math.round(r.tot / r.n)) + '</b>' : 'Completa los datos para ver el cálculo.'; };
-    ['ed-cap', 'ed-tasa', 'ed-fre', 'ed-cuo'].forEach(id => $('#' + id).oninput = prevEd); prevEd();
+    const prevEd = () => { const r = calcEd(); $('#ed-prev').innerHTML = r && r.fi ? 'Precio a crédito <b>' + money(r.tot) + '</b> · ' + r.n + ' cuotas de <b>' + money(Math.round(r.tot / r.n)) + '</b>' : r ? 'Interés ' + money(r.inte) + ' (' + r.tasa + '% × ' + mesesTxt(r.meses) + ') · Total <b>' + money(r.tot) + '</b> · ' + r.n + ' cuotas de <b>' + money(Math.round(r.tot / r.n)) + '</b>' : 'Completa los datos para ver el cálculo.'; };
+    ['ed-cap', 'ed-tasa', 'ed-precio', 'ed-fre', 'ed-cuo'].forEach(id => { if ($('#' + id)) $('#' + id).oninput = prevEd; }); prevEd();
     $('#ed-go').onclick = async () => {
       const r = calcEd(); if (!r || !$('#ed-fec').value) { $('#ed-msg').innerHTML = '<div class="msg err">Completa todos los datos.</div>'; return; }
       if (!confirm('¿Guardar los cambios? Las cuotas se van a recalcular.')) return;
       $('#ed-go').disabled = true;
-      const { error } = await sb.rpc('editar_prestamo', { p_cuenta: c.id, p_capital: r.cap, p_tasa: r.tasa, p_frecuencia: r.fre, p_cuotas: r.n, p_fecha: $('#ed-fec').value, p_descripcion: $('#ed-desc') ? $('#ed-desc').value.trim() : null });
+      const { error } = await sb.rpc('editar_prestamo', { p_cuenta: c.id, p_capital: r.cap, p_tasa: r.tasa, p_frecuencia: r.fre, p_cuotas: r.n, p_fecha: $('#ed-fec').value, p_descripcion: $('#ed-desc') ? $('#ed-desc').value.trim() : null, p_ganancia: r.fi ? r.g : null });
       if (error) { $('#ed-msg').innerHTML = '<div class="msg err">' + esc(error.message) + '</div>'; $('#ed-go').disabled = false; return; }
       fin(null, 'Préstamo corregido.');
     };
@@ -1083,20 +1112,20 @@ function docAmortizacion(c, k, per) {
   const { doc, y } = nuevoDoc('TABLA DE PAGOS');
   let yy = kv(doc, y, [
     ['Referencia', pad(c.consecutivo)], ['Cliente', per.nombre || ''], ['Cédula', per.cedula || ''],
-    ['Desembolso', fdate(c.fecha_desembolso)], [c.tipo === 'fiado' ? 'Valor del producto' : 'Préstamo', money(c.capital)],
-    ['Interés', money(c.interes_total)],
+    ['Desembolso', fdate(c.fecha_desembolso)], ...(c.tipo === 'fiado' ? [] : [['Préstamo', money(c.capital)], ['Interés', money(c.interes_total)]]),
     ['Total a pagar', money(c.total)],
     ['Forma de pago', `${c.num_cuotas} cuotas ${FREQ[c.frecuencia].toLowerCase()}es`]]);
   let s = Number(c.total);
   const estQ = q => Number(q.pagado) >= Number(q.valor) ? 'Pagada' : c.estado === 'anulado' ? 'Anulada' : c.estado === 'pagado' ? 'Cubierta' : q.fecha_vencimiento < hoy() ? 'Vencida' : Number(q.pagado) > 0 ? 'Parcial' : (k.proxima && k.proxima.numero === q.numero ? 'A pagar' : 'Pendiente');
-  const body = k.cu.map(q => { s -= Number(q.valor); return [q.numero, fdate(q.fecha_vencimiento), money(q.capital_parte), money(q.interes_parte), money(q.valor), money(Math.max(0, s)), money(q.pagado), estQ(q)]; });
+  const fi = c.tipo === 'fiado';
+  const body = k.cu.map(q => { s -= Number(q.valor); return [q.numero, fdate(q.fecha_vencimiento), ...(fi ? [] : [money(q.capital_parte), money(q.interes_parte)]), money(q.valor), money(Math.max(0, s)), money(q.pagado), estQ(q)]; });
   const sum = f => k.cu.reduce((t, q) => t + Number(q[f]), 0);
   doc.autoTable({ ...tablaEstilo, startY: yy,
-    head: [['#', 'Vence', 'Préstamo', 'Interés', 'Cuota', 'Saldo', 'Pagado', 'Estado']], body,
-    foot: [['', 'Total', money(sum('capital_parte')), money(sum('interes_parte')), money(sum('valor')), '', money(sum('pagado')), '']],
-    columnStyles: { 0: { halign: 'center' }, 1: { halign: 'center' }, 7: { halign: 'center' } },
+    head: [fi ? ['#', 'Vence', 'Cuota', 'Saldo', 'Pagado', 'Estado'] : ['#', 'Vence', 'Préstamo', 'Interés', 'Cuota', 'Saldo', 'Pagado', 'Estado']], body,
+    foot: [fi ? ['', 'Total', money(sum('valor')), '', money(sum('pagado')), ''] : ['', 'Total', money(sum('capital_parte')), money(sum('interes_parte')), money(sum('valor')), '', money(sum('pagado')), '']],
+    columnStyles: { 0: { halign: 'center' }, 1: { halign: 'center' }, [fi ? 5 : 7]: { halign: 'center' } },
     didParseCell: d => {
-      if (d.section !== 'body' || d.column.index !== 7) return;
+      if (d.section !== 'body' || d.column.index !== (fi ? 5 : 7)) return;
       const t = d.cell.raw;
       if (t === 'Pagada' || t === 'Cubierta') d.cell.styles.textColor = [6, 118, 71];
       if (t === 'Vencida') d.cell.styles.textColor = [180, 35, 24];
@@ -1260,6 +1289,7 @@ function vConfig() {
     <p class="mute" style="margin-top:0">Son las que aparecen por defecto al crear un préstamo o un producto a crédito. En cada operación las puedes cambiar.</p>
     ${campo('c-tp', 'Préstamos de dinero (% mensual)', tasaDe('prestamo'))}
     ${campo('c-tc', 'Productos a crédito (% mensual)', tasaDe('fiado'))}
+    <div id="c-msg"></div>
     <div style="margin-top:12px"><button id="c-save">Guardar</button></div></div>
     <div class="card"><h2>Tus datos en Excel</h2>
       <p class="mute" style="margin-top:0">Descarga en un archivo de Excel todos tus clientes, préstamos, cuotas y pagos. Es tu copia de seguridad.</p>
@@ -1308,15 +1338,16 @@ function vConfig() {
   $('#c-save').onclick = async () => {
     const pago = leerPago();
     const hayPago = pago.pago_banco || pago.pago_tipo || pago.pago_numero || pago.pago_nequi || pago.pago_daviplata || pago.pago_llave || qrSel.logo;
-    if (hayPago && !pago.pago_titular) { setAviso('Escribe el nombre del titular de la cuenta: es obligatorio cuando hay datos de pago.'); return render(); }
+    if (hayPago && !pago.pago_titular) { alertaEn('c-msg', 'Escribe el nombre del titular de la cuenta: es obligatorio cuando hay datos de pago.'); $('#c-ptit').focus(); return; }
     const val = { nombre: $('#c-nom').value.trim() || negocio.nombre, ciudad: $('#c-ciu').value.trim(), logo: logoSel.logo, logo_w: logoSel.w, logo_h: logoSel.h, qr: qrSel.logo, qr_w: qrSel.w, qr_h: qrSel.h, ...pago,
       tasa_prestamo: (n => isNaN(n) || n < 0 || n > 100 ? 20 : n)(decimal($('#c-tp').value)), tasa_credito: (n => isNaN(n) || n < 0 || n > 100 ? 10 : n)(decimal($('#c-tc').value)) };
     $('#c-save').disabled = true;
     const { nombre: nom, ...nuevo } = val;
     const { id: _i, codigo: _c, nombre: _n, ...previo } = negocio; // se conservan los datos viejos que ya no se muestran
     const { error } = await sb.rpc('guardar_negocio', { p_nombre: nom, p_config: { ...previo, ...nuevo } });
-    if (!error) negocio = { ...negocio, ...val };
-    setAviso(error ? error.message : 'Datos guardados.', error ? 'err' : 'ok'); render();
+    if (error) { alertaEn('c-msg', error.message); $('#c-save').disabled = false; return; }
+    negocio = { ...negocio, ...val };
+    setAviso('Datos guardados.', 'ok'); render();
   };
 }
 
@@ -1357,7 +1388,7 @@ function msgDoc(tipo, c, k, per, pagos, url) {
       const pagada = Number(q.pagado) >= Number(q.valor), parcial = !pagada && Number(q.pagado) > 0;
       return `${q.numero}. ${fdate(q.fecha_vencimiento)} · ${money(q.valor)}${pagada ? ' (pagada)' : parcial ? ' (abonado ' + money(q.pagado) + ')' : ''}`;
     }).join('\n');
-    return `Hola ${n}, ¿cómo estás? Te comparto la tabla de pagos de tu ${fiado ? 'crédito' : 'préstamo'} Referencia ${ref}.\n\n${fiado ? 'Valor del producto' : 'Préstamo'}: ${money(c.capital)}\nInterés: ${money(c.interes_total)}\nTotal a pagar: ${money(c.total)}\n\nCuotas (${c.num_cuotas} ${fr === 'mensual' ? 'mensuales' : fr + 'es'}):\n${lin}${k.saldo > 0 && k.saldo < Number(c.total) ? '\n\nSaldo pendiente: ' + money(k.saldo) : ''}${m ? '\n\nPuedes pagar por:\n' + m + '\n\n' + pedirComp(ref) : ''}\n\nCualquier duda, escríbenos. ¡Gracias! — ${neg}`;
+    return `Hola ${n}, ¿cómo estás? Te comparto la tabla de pagos de tu ${fiado ? 'crédito' : 'préstamo'} Referencia ${ref}.\n\n${fiado ? '' : 'Préstamo: ' + money(c.capital) + '\nInterés: ' + money(c.interes_total) + '\n'}Total a pagar: ${money(c.total)}\n\nCuotas (${c.num_cuotas} ${fr === 'mensual' ? 'mensuales' : fr + 'es'}):\n${lin}${k.saldo > 0 && k.saldo < Number(c.total) ? '\n\nSaldo pendiente: ' + money(k.saldo) : ''}${m ? '\n\nPuedes pagar por:\n' + m + '\n\n' + pedirComp(ref) : ''}\n\nCualquier duda, escríbenos. ¡Gracias! — ${neg}`;
   }
   if (tipo === 'refi') return refActual ? `Hola ${n}, ¿cómo estás? Te enviamos el documento de tu refinanciación: se canceló tu Referencia ${pad(refActual.viejo.consecutivo)} con ${money(refActual.pago.monto)} y se abrió la Referencia ${pad(refActual.nuevo.consecutivo)} por ${money(refActual.nuevo.capital)}. Valor entregado: ${money(Math.max(0, Number(refActual.nuevo.capital) - Number(refActual.pago.monto)))}. Gracias por tu confianza. — ${neg}` : '';
   const p = [...pagos].reverse().find(x => x.estado === 'activo' && x.metodo !== 'refinanciación');
@@ -1670,13 +1701,15 @@ function vMiClave() {
     <p class="mute">Cuenta: <b>${esc(me.es_plataforma ? (me.usuario || '') + '@panel' : cuentaDe(me))}</b></p>
     <label>Clave nueva</label><input id="k-1" type="password" autocomplete="new-password">
     <label>Repite la clave nueva</label><input id="k-2" type="password" autocomplete="new-password">
+    <div id="k-msg"></div>
     <div style="margin-top:12px"><button id="k-go">Cambiar clave</button></div></div>`;
   $('#k-go').onclick = async () => {
     const a = $('#k-1').value, b = $('#k-2').value;
-    if (a.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vMiClave(); }
-    if (a !== b) { setAviso('Las dos claves no son iguales.'); return vMiClave(); }
+    if (a.length < 6) { alertaEn('k-msg', 'La clave debe tener mínimo 6 caracteres.'); return; }
+    if (a !== b) { alertaEn('k-msg', 'Las dos claves no son iguales.'); return; }
     const { error } = await sb.auth.updateUser({ password: a });
-    setAviso(error ? error.message : 'Clave cambiada.', error ? 'err' : 'ok'); vMiClave();
+    if (error) { alertaEn('k-msg', error.message); return; }
+    setAviso('Clave cambiada.', 'ok'); vMiClave();
   };
 }
 

@@ -743,7 +743,7 @@ async function vPrestamos() {
       if (!per || !cap || !cuo || !fec || (tipo !== 'fiado' && isNaN(tasa))) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
       if (tipo === 'fiado' && !desc) { $('#n-msg').innerHTML = '<div class="msg err">Escribe qué producto se entrega.</div>'; return; }
       $('#n-go').disabled = true;
-      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tipo === 'fiado' ? Math.min(9999, Math.round(gFi / cap * 10000) / 100) : tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, p_ganancia: gFi, p_descripcion: tipo === 'fiado' ? desc : null });
+      const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tipo === 'fiado' ? Math.min(9999, Math.round(gFi / cap * 10000) / 100) : tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, ...(tipo === 'fiado' ? { p_ganancia: gFi } : {}), p_descripcion: tipo === 'fiado' ? desc : null });
       if (error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; $('#n-go').disabled = false; return; }
       cuentaSel = data; setAviso(tipo === 'fiado' ? 'Crédito creado. Ya puedes descargar su tabla de pagos.' : 'Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
     };
@@ -945,7 +945,7 @@ async function vCuenta() {
       const r = calcEd(); if (!r || !$('#ed-fec').value) { $('#ed-msg').innerHTML = '<div class="msg err">Completa todos los datos.</div>'; return; }
       if (!confirm('¿Guardar los cambios? Las cuotas se van a recalcular.')) return;
       $('#ed-go').disabled = true;
-      const { error } = await sb.rpc('editar_prestamo', { p_cuenta: c.id, p_capital: r.cap, p_tasa: r.tasa, p_frecuencia: r.fre, p_cuotas: r.n, p_fecha: $('#ed-fec').value, p_descripcion: $('#ed-desc') ? $('#ed-desc').value.trim() : null, p_ganancia: r.fi ? r.g : null });
+      const { error } = await sb.rpc('editar_prestamo', { p_cuenta: c.id, p_capital: r.cap, p_tasa: r.tasa, p_frecuencia: r.fre, p_cuotas: r.n, p_fecha: $('#ed-fec').value, p_descripcion: $('#ed-desc') ? $('#ed-desc').value.trim() : null, ...(r.fi ? { p_ganancia: r.g } : {}) });
       if (error) { $('#ed-msg').innerHTML = '<div class="msg err">' + esc(error.message) + '</div>'; $('#ed-go').disabled = false; return; }
       fin(null, 'Préstamo corregido.');
     };

@@ -639,7 +639,7 @@ const tagHtml = ([t, cls]) => `<span class="tag ${cls}">${t}</span>`;
 
 async function vPrestamos() {
   if (cuentaSel) return vCuenta();
-  const v = $('#vista');
+  const v = $('#vista'); cargaBase();
   v.innerHTML = '<p class="mute">Cargando…</p>';
   const [rc, rp] = await Promise.all([
     sb.from('cuentas').select('*,personas(nombre,cedula,telefono),cuotas(numero,fecha_vencimiento,valor,pagado)').order('creado_en', { ascending: false }).limit(500),
@@ -719,6 +719,7 @@ async function vPrestamos() {
       if (!cap || !n || isNaN(tasa)) { $('#n-prev').innerHTML = 'Escribe capital, tasa y cuotas para ver el cálculo.'; return; }
       const exacto = n / PERIODOS_MES[fre], meses = Math.ceil(exacto), inte = Math.round(cap * tasa / 100 * meses), tot = cap + inte;
       $('#n-prev').innerHTML = `Interés total: <b>${money(inte)}</b> (${tasa}% × ${meses} ${meses === 1 ? 'mes' : 'meses'}${Number.isInteger(exacto) ? '' : ', porque la cuota ' + n + ' cae en el ' + (ORD_MES[meses] || meses + '.º') + ' mes'})<br>Total a pagar: <b>${money(tot)}</b><br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
+      if (estCierre && cap > Number(estCierre.base)) $('#n-prev').innerHTML += '<br><b class="bad-t">Ojo: tu base disponible es ' + money(estCierre.base) + ' y este préstamo es de ' + money(cap) + '.</b>';
     };
     ['n-cap', 'n-tasa', 'n-fre', 'n-cuo', 'n-precio', 'n-pct'].forEach(id => $('#' + id).oninput = prev);
     $('#n-modo').onchange = () => { const m = $('#n-modo').value; $('#n-precio-w').hidden = m !== 'precio'; $('#n-pct-w').hidden = m !== 'pct'; prev(); };
@@ -742,10 +743,11 @@ async function vPrestamos() {
       if (tipo === 'fiado' && gFi < 0) { $('#n-msg').innerHTML = '<div class="msg err">El precio final no puede ser menor al valor inicial.</div>'; return; }
       if (!per || !cap || !cuo || !fec || (tipo !== 'fiado' && isNaN(tasa))) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
       if (tipo === 'fiado' && !desc) { $('#n-msg').innerHTML = '<div class="msg err">Escribe qué producto se entrega.</div>'; return; }
+      if (tipo !== 'fiado' && estCierre && cap > Number(estCierre.base) && !confirm('Este préstamo (' + money(cap) + ') es mayor que tu base disponible (' + money(estCierre.base) + '). ¿Crearlo de todas formas?')) return;
       $('#n-go').disabled = true;
       const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tipo === 'fiado' ? Math.min(9999, Math.round(gFi / cap * 10000) / 100) : tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, ...(tipo === 'fiado' ? { p_ganancia: gFi } : {}), p_descripcion: tipo === 'fiado' ? desc : null });
       if (error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(error.message)}</div>`; $('#n-go').disabled = false; return; }
-      cuentaSel = data; setAviso(tipo === 'fiado' ? 'Crédito creado. Ya puedes descargar su tabla de pagos.' : 'Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
+      estCierreT = 0; cuentaSel = data; setAviso(tipo === 'fiado' ? 'Crédito creado. Ya puedes descargar su tabla de pagos.' : 'Préstamo creado. Ya puedes descargar su tabla de amortización.', 'ok'); vPrestamos();
     };
   }
 }
@@ -896,7 +898,7 @@ async function vCuenta() {
     $('#pg-go').disabled = true;
     const { error } = await sb.rpc('registrar_pago', { p_cuenta: c.id, p_monto: monto, p_fecha: $('#pg-fecha').value || h, p_metodo: $('#pg-met').value, p_nota: $('#pg-nota').value.trim() || null });
     if (error) { alertaEn('pg-msg', error.message); $('#pg-go').disabled = false; return; }
-    fin(null, 'Pago registrado. Ya puedes descargar el recibo.');
+    estCierreT = 0; fin(null, 'Pago registrado. Ya puedes descargar el recibo.');
   };
   document.querySelectorAll('[data-anpago]').forEach(b => b.onclick = async () => {
     const motivo = (prompt('Motivo de la anulación del pago:') || '').trim();
@@ -1504,11 +1506,27 @@ const miniTile = (et, val, sub = '', cls = '') => `<div class="stat ${cls}"><spa
 
 
 /* ---- Cierre de período: la ganancia cobrada pasa a la base ---- */
-let estCierre = null;
+let estCierre = null, estCierreT = 0;
+function cargaBase() {
+  if (!(me && (me.es_admin || can('reportes', 'ver'))) || Date.now() - estCierreT < 20000) return;
+  estCierreT = Date.now();
+  sb.rpc('estado_cierre').then(r => { if (r && !r.error && r.data) estCierre = r.data; }).catch(() => {});
+}
+async function ajustarBase() {
+  const ec = estCierre; if (!ec) return;
+  const t = prompt('¿Cuánto dinero tienes disponible hoy para prestar? (solo números)', String(Math.max(0, Math.round(Number(ec.base)))));
+  if (t === null) return;
+  const n = entero(t);
+  if (n === null || isNaN(n) || n < 0) { setAviso('Escribe un valor válido (cero o más).'); return vEstadisticas(); }
+  const { error } = await sb.rpc('ajustar_base', { p_valor: n });
+  estCierreT = 0;
+  setAviso(error ? error.message : 'Listo: tu base disponible ahora es ' + money(n) + '.', error ? 'err' : 'ok');
+  vEstadisticas();
+}
 const htmlCierrePeriodo = (ec, conHistorial) => {
   if (!ec) return '<p class="mute">Todavía no está activado el cierre de período en tu base de datos (falta ejecutar 17_cierres.sql).</p>';
   const g = Number(ec.ganancia_periodo || 0), admin = me && me.es_admin;
-  return `<p class="mute" style="margin-top:0">Base = capital que tienes prestado hoy + ganancias ya capitalizadas. Al cerrar el período, la ganancia ya cobrada pasa a la base y la ganancia del período vuelve a cero.</p>
+  return `<p class="mute" style="margin-top:0">La base es el capital que tienes disponible para prestar. Al cerrar el período, la ganancia ya cobrada pasa a la base y la ganancia del período vuelve a cero.</p>
     <div class="stats" style="margin:8px 0">
       ${miniTile('Ganancia del período', money(g), ec.ultimo_cierre ? 'desde el cierre del ' + fdate(ec.ultimo_cierre) : 'desde el inicio')}
       ${miniTile('Ya en la base', money(ec.capitalizada), 'ganancias capitalizadas')}
@@ -1651,19 +1669,21 @@ async function vEstadisticas() {
   const maxMora = Math.max(...(data.mora_edades || []).map(x => num(x.monto)), 0);
   const RAMPA = ['--v-r1', '--v-r2', '--v-r3', '--v-r4'];
   const top3 = `<div class="stats" style="grid-template-columns:repeat(3,1fr)">
-      ${tile('Base (inversión)', `<span title="${money(estCierre ? num(estCierre.base) : calle)}">${dineroC(estCierre ? num(estCierre.base) : calle)}</span>`, `${num(r.n_vigentes)} operación(es)`)}
+      ${tile('Base (disponible)', `<span title="${money(estCierre ? num(estCierre.base) : calle)}">${dineroC(estCierre ? num(estCierre.base) : calle)}</span>`, estCierre ? 'para prestar' : `${num(r.n_vigentes)} operación(es)`)}
       ${tile('Cobrado este mes', `<span title="${money(mes)}">${dineroC(mes)}</span>`, delta === null ? 'sin mes anterior' : `<span class="${delta >= 0 ? 'ok-t' : 'bad-t'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</span> vs mes anterior`)}
       ${tile('En mora', `<span title="${money(r.vencido)}">${dineroC(r.vencido)}</span>`, `${num(r.n_en_mora)} préstamo(s)`, num(r.vencido) > 0 ? 'alerta' : '')}</div>`;
   const SEC = [['resumen', 'Resumen'], ['capital', 'Capital'], ['ganancias', 'Ganancias'], ['cobros', 'Cobros'], ['cierre', 'Cierre de caja'], ['mora', 'Mora'], ['clientes', 'Clientes']];
   const secciones = {
     resumen: `
     ${estCierre ? `<div class="card viz">
-      <span class="hero-et">Base: lo que tienes invertido</span>
+      <span class="hero-et">Base: capital disponible para prestar</span>
       <div class="hero">${money(estCierre.base)}</div>
       <div class="v-dos">
-        <div><i style="background:var(--v-cap)"></i><span>Capital en la calle</span><b>${money(estCierre.capital_en_calle)}</b><small class="mute">lo que tienes prestado hoy</small></div>
-        <div><i style="background:var(--v-gan)"></i><span>Ganancias capitalizadas</span><b>${money(estCierre.capitalizada)}</b><small class="mute">ganancias que ya pasaron a la base</small></div>
+        <div><i style="background:var(--v-cap)"></i><span>En la calle</span><b>${money(estCierre.capital_en_calle)}</b><small class="mute">prestado que aún no te pagan</small></div>
+        <div><i style="background:var(--v-gan)"></i><span>Ganancia del período</span><b>${money(estCierre.ganancia_periodo)}</b><small class="mute">pasa a la base al cerrar</small></div>
       </div>
+      ${Number(estCierre.base) < 0 ? '<p class="mute" style="font-size:13px;margin:8px 0 0">Tu base sale negativa porque aún no me has dicho cuánto dinero tienes disponible para prestar. Pulsa «Ajustar mi base».</p>' : ''}
+      ${me && me.es_admin ? '<p style="margin:10px 0 0"><button class="sec sm" data-ajustar>Ajustar mi base</button></p>' : ''}
     </div>` : ''}
     <div class="card viz">
       <span class="hero-et">${estCierre ? 'Por cobrar: capital + ganancia pendiente' : 'Base: lo que tienes invertido'}</span>
@@ -1753,6 +1773,7 @@ async function vEstadisticas() {
   $('#e-ref').onclick = () => vEstadisticas();
   const bv = $('#e-vista'); if (bv) bv.onclick = () => { vistaEst = vistaEst === 'tabla' ? 'graf' : 'tabla'; vEstadisticas(); };
   document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = cerrarPeriodo);
+  document.querySelectorAll('[data-ajustar]').forEach(b => b.onclick = ajustarBase);
   if (tabEst === 'cobros') cargarCobrosFrec(); if (tabEst === 'cierre') montarCierre();
   activarTips({ 'g-cob': [mesesCob, SC, money], 'g-pre': [meses, [{ k: 'prestado', nombre: 'Prestado', color: '--v-cap' }], money], 'g-cli': [meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], n => String(num(n))] });
 }

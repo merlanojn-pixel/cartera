@@ -147,8 +147,8 @@ table a.btn.sm{padding:4px 7px;font-size:12px}
 .tag.ok{color:var(--ok);border-color:var(--ok)}
 details summary{cursor:pointer;font-size:17px;padding:2px 0}
 .res-lista{margin-top:6px}
-.res-cli{display:block;width:100%;text-align:left;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:0 0 6px;font-size:15px}
-.cli-elegido{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#ecf5ef;border:1px solid #bfd8c8;border-radius:10px;padding:10px 12px;margin-top:6px}
+.res-cli{display:block;width:100%;text-align:left;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:0 0 6px;font-size:15px}
+.cli-elegido{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);color:var(--ink);border:1px solid var(--brand);border-radius:10px;padding:10px 12px;margin-top:6px}
 .hist-prest{margin-top:4px;font-size:13px}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
@@ -1284,7 +1284,7 @@ function vConfig() {
     <input id="qr-file" type="file" accept="image/png,image/jpeg,image/webp" style="display:none">
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sec sm" id="qr-pick" type="button">Subir QR</button><button class="sec sm" id="qr-del" type="button">Quitar</button></div>
     <h3 style="font-size:14px;margin:16px 0 4px">Así se verá el mensaje de cobro</h3>
-    <pre id="c-prev" style="white-space:pre-wrap;font:13px/1.4 inherit;background:#f4f6f5;border-radius:10px;padding:10px;margin:0"></pre>
+    <pre id="c-prev" style="white-space:pre-wrap;font:13px/1.4 inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;margin:0"></pre>
     <h2 style="margin-top:18px">Tasas habituales</h2>
     <p class="mute" style="margin-top:0">Son las que aparecen por defecto al crear un préstamo o un producto a crédito. En cada operación las puedes cambiar.</p>
     ${campo('c-tp', 'Préstamos de dinero (% mensual)', tasaDe('prestamo'))}
@@ -1485,10 +1485,136 @@ function barrasH(filas, color, fmt = money) {
 }
 
 let tabEst = 'resumen';
+/* ---------------- COBROS POR MODALIDAD Y CIERRE DE CAJA ---------------- */
+const fISO = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const deISO = s => new Date(s + 'T00:00:00');
+// Semana: domingo a sábado. Quincena: 1 al 15 y 16 al fin de mes. Mes: completo.
+function periodoDe(tipo, ref) {
+  const d = deISO(ref); let a, b;
+  if (tipo === 'semanal') { a = new Date(d); a.setDate(d.getDate() - d.getDay()); b = new Date(a); b.setDate(a.getDate() + 6); }
+  else if (tipo === 'quincenal') {
+    const prim = d.getDate() <= 15;
+    a = new Date(d.getFullYear(), d.getMonth(), prim ? 1 : 16); b = prim ? new Date(d.getFullYear(), d.getMonth(), 15) : new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  } else { a = new Date(d.getFullYear(), d.getMonth(), 1); b = new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+  return { desde: fISO(a), hasta: fISO(b) };
+}
+const etiquetaPeriodo = p => 'Del ' + fdate(p.desde) + ' al ' + fdate(p.hasta);
+const NOM_PERIODO = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual' };
+const miniTile = (et, val, sub = '', cls = '') => `<div class="stat ${cls}"><span>${et}</span><b>${val}</b>${sub ? `<small class="mute">${sub}</small>` : ''}</div>`;
+
+
+/* ---- Cierre de período: la ganancia cobrada pasa a la base ---- */
+let estCierre = null;
+const htmlCierrePeriodo = (ec, conHistorial) => {
+  if (!ec) return '<p class="mute">Todavía no está activado el cierre de período en tu base de datos (falta ejecutar 17_cierres.sql).</p>';
+  const g = Number(ec.ganancia_periodo || 0), admin = me && me.es_admin;
+  return `<p class="mute" style="margin-top:0">Base = capital que tienes prestado hoy + ganancias ya capitalizadas. Al cerrar el período, la ganancia ya cobrada pasa a la base y la ganancia del período vuelve a cero.</p>
+    <div class="stats" style="margin:8px 0">
+      ${miniTile('Ganancia del período', money(g), ec.ultimo_cierre ? 'desde el cierre del ' + fdate(ec.ultimo_cierre) : 'desde el inicio')}
+      ${miniTile('Ya en la base', money(ec.capitalizada), 'ganancias capitalizadas')}
+    </div>
+    ${admin ? `<button data-cerrar ${g > 0 ? '' : 'disabled'}>Cerrar período y pasar ${money(g)} a la base</button>` : '<p class="mute" style="font-size:13px">Solo el administrador puede hacer el cierre.</p>'}
+    ${conHistorial ? `<h3 style="font-size:14px;margin:14px 0 4px">Cierres anteriores</h3>${(ec.cierres || []).length ? `<div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Fecha</th><th>Pasó a la base</th><th>Base después</th></tr></thead><tbody>
+      ${ec.cierres.map(c => `<tr><td>${fdate(c.fecha)}${c.por ? `<div class="mute" style="font-size:11px">${esc(c.por)}</div>` : ''}</td><td>${money(c.ganancia)}</td><td>${money(c.base_despues)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mute">Todavía no has hecho ningún cierre.</p>'}` : ''}`;
+};
+async function cerrarPeriodo() {
+  const ec = estCierre; if (!ec) return;
+  const g = Number(ec.ganancia_periodo || 0);
+  if (g <= 0) { setAviso('No hay ganancia cobrada nueva para cerrar.'); return vEstadisticas(); }
+  if (!confirm('¿Cerrar el período? Los ' + money(g) + ' de ganancia cobrada pasan a la base. Esta acción no se puede deshacer.')) return;
+  document.querySelectorAll('[data-cerrar]').forEach(b => b.disabled = true);
+  const { error } = await sb.rpc('cerrar_periodo', { p_nota: null });
+  setAviso(error ? error.message : 'Cierre hecho: ' + money(g) + ' pasaron a la base. La ganancia del período empieza de nuevo en cero.', error ? 'err' : 'ok');
+  vEstadisticas();
+}
+
+async function cargarCobrosFrec() {
+  const w = $('#cob-frec'); if (!w) return;
+  const h = hoy(), tipos = [['semanal', 'semanales', 'esta semana'], ['quincenal', 'quincenales', 'esta quincena'], ['mensual', 'mensuales', 'este mes']];
+  const res = await Promise.all(tipos.map(([t]) => { const p = periodoDe(t, h); return sb.rpc('reporte_periodo', { p_desde: p.desde, p_hasta: p.hasta }); }));
+  const mal = res.find(r => r.error || !r.data);
+  if (mal) { w.innerHTML = '<div class="msg err">' + esc(mal.error ? mal.error.message : 'No se pudieron calcular los cobros.') + '</div>'; return; }
+  w.innerHTML = tipos.map(([t, nom, cuando], i) => {
+    const r = res[i].data, f = (r.por_frecuencia || []).find(x => x.frecuencia === t) || {}, p = periodoDe(t, h);
+    return `<div class="card viz"><div class="row"><h2 style="margin:0">Cobros ${nom}</h2><span class="mute" style="font-size:12px">${etiquetaPeriodo(p)}</span></div>
+      <div class="stats" style="margin:8px 0 0">
+        ${miniTile('Toca cobrar ' + cuando, money(f.a_cobrar || 0), 'cuotas que vencen en este período')}
+        ${miniTile('Cobrado', money(f.cobrado || 0), 'lo que entró en este período')}
+        ${miniTile('Falta por cobrar', money(f.pendiente || 0), 'vencido y sin pagar', Number(f.pendiente) > 0 ? 'alerta' : '')}
+        ${miniTile('Clientes', Number(f.n_clientes || 0), 'con cuotas en este período')}
+      </div></div>`;
+  }).join('');
+}
+
+let cierreTipo = 'semanal', cierreRef = null, cierreDatos = null;
+async function montarCierre() {
+  const w = $('#cierre-w'); if (!w) return;
+  if (!cierreRef) cierreRef = hoy();
+  const p = periodoDe(cierreTipo, cierreRef);
+  w.innerHTML = `<div class="card"><h2>Cierre de caja</h2>
+    <p class="mute" style="margin-top:0">Elige el tipo de reporte y el período. Semana: de domingo a sábado. Quincena: del 1 al 15 y del 16 al fin de mes.</p>
+    <div class="pest" role="tablist">${Object.entries(NOM_PERIODO).map(([k, t]) => `<button class="${cierreTipo === k ? 'on' : ''}" data-ct="${k}">${t}</button>`).join('')}</div>
+    <div class="row" style="margin:10px 0"><button class="sec sm" id="ci-ant">← Anterior</button><b style="text-align:center;flex:1;font-size:14px;line-height:1.3">${fdate(p.desde).slice(0, 5)} al ${fdate(p.hasta)}</b><button class="sec sm" id="ci-sig">Siguiente →</button></div>
+    <div id="ci-res"><p class="mute">Calculando…</p></div></div>
+    <div class="card"><h2>Cerrar período</h2>${htmlCierrePeriodo(estCierre, true)}</div>`;
+  document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = cerrarPeriodo);
+  document.querySelectorAll('[data-ct]').forEach(b => b.onclick = () => { cierreTipo = b.dataset.ct; montarCierre(); });
+  $('#ci-ant').onclick = () => { const d = deISO(p.desde); d.setDate(d.getDate() - 1); cierreRef = fISO(d); montarCierre(); };
+  $('#ci-sig').onclick = () => { const d = deISO(p.hasta); d.setDate(d.getDate() + 1); cierreRef = fISO(d); montarCierre(); };
+  const { data, error } = await sb.rpc('reporte_periodo', { p_desde: p.desde, p_hasta: p.hasta });
+  const out = $('#ci-res'); if (!out) return;
+  if (error || !data) { out.innerHTML = '<div class="msg err">' + esc(error ? error.message : 'No se pudo calcular el reporte.') + '</div>'; return; }
+  cierreDatos = { r: data, tipo: cierreTipo, p };
+  const r = data, N = x => Number(x || 0);
+  out.innerHTML = `<div class="stats">
+      ${miniTile('Total cobrado', money(r.cobrado), N(r.n_pagos) + ' pago(s)')}
+      ${miniTile('Ganancia cobrada', money(r.ganancia_cobrada), 'intereses que entraron')}
+      ${miniTile('Capital recuperado', money(r.capital_cobrado))}
+      ${miniTile('Prestado en el período', money(r.prestado), N(r.n_prestamos) + ' préstamo(s)')}
+    </div>
+    <h3 style="font-size:14px;margin:14px 0 4px">Cobrado por forma de pago</h3>
+    ${(r.por_metodo || []).length ? `<table class="matrix tabla"><tbody>${r.por_metodo.map(m => `<tr><td>${esc(m.metodo)}</td><td style="text-align:right">${money(m.monto)}</td><td class="mute" style="text-align:right">${N(m.n)} pago(s)</td></tr>`).join('')}</tbody></table>` : '<p class="mute">No hubo pagos en este período.</p>'}
+    <h3 style="font-size:14px;margin:14px 0 4px">Por modalidad de cobro</h3>
+    <div style="overflow-x:auto;margin:0 -14px"><table class="matrix tabla"><thead><tr><th>Modalidad</th><th>Toca cobrar</th><th>Cobrado</th><th>Falta</th></tr></thead><tbody>
+      ${(r.por_frecuencia || []).map(f => `<tr><td>${NOM_PERIODO[f.frecuencia] || f.frecuencia}</td><td>${money(f.a_cobrar)}</td><td>${money(f.cobrado)}</td><td>${money(f.pendiente)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="mute" style="font-size:13px;margin:10px 0">Vencido sin pagar al cierre: <b>${money(r.vencido)}</b> · Saldo por cobrar hoy: <b>${money(r.saldo_vigente)}</b></p>
+    <button id="ci-pdf" ${can('prestamos', 'exportar') || can('reportes', 'ver') ? '' : 'disabled'}>Descargar reporte (PDF)</button>`;
+  $('#ci-pdf').onclick = () => generar(() => docCierre(cierreDatos.r, cierreDatos.tipo, cierreDatos.p));
+}
+
+function docCierre(r, tipo, p) {
+  const N = x => Number(x || 0);
+  const { doc, y } = nuevoDoc('CIERRE DE CAJA ' + NOM_PERIODO[tipo].toUpperCase());
+  let yy = kv(doc, y, [
+    ['Período', etiquetaPeriodo(p)],
+    ['Total cobrado', money(r.cobrado) + ' (' + N(r.n_pagos) + ' pago(s))'],
+    ['Ganancia cobrada', money(r.ganancia_cobrada)],
+    ['Capital recuperado', money(r.capital_cobrado)],
+    ...(r.por_metodo || []).map(m => ['Cobrado en ' + m.metodo, money(m.monto)]),
+    ['Prestado en el período', money(r.prestado) + ' (' + N(r.n_prestamos) + ' préstamo(s))'],
+    ['Vencido sin pagar', money(r.vencido)],
+    ['Saldo por cobrar hoy', money(r.saldo_vigente)]]);
+  doc.autoTable({ ...tablaEstilo, startY: yy + 2,
+    head: [['Modalidad', 'Toca cobrar', 'Cobrado', 'Falta por cobrar']],
+    body: (r.por_frecuencia || []).map(f => [NOM_PERIODO[f.frecuencia] || f.frecuencia, money(f.a_cobrar), money(f.cobrado), money(f.pendiente)]),
+    columnStyles: { 0: { halign: 'left' } } });
+  yy = doc.lastAutoTable.finalY + 8;
+  yy = negrita(doc, yy, 'Pagos recibidos');
+  if ((r.pagos || []).length) {
+    doc.autoTable({ ...tablaEstilo, startY: yy,
+      head: [['Fecha', 'Recibo', 'Ref.', 'Cliente', 'Forma', 'Valor']],
+      body: r.pagos.map(x => [fdate(x.fecha), pad(x.recibo), pad(x.ref), x.cliente, x.metodo, money(x.monto)]),
+      foot: [['', '', '', '', 'Total', money(r.cobrado)]],
+      columnStyles: { 3: { halign: 'left' }, 4: { halign: 'left' } } });
+  } else doc.text('No hubo pagos en este período.', 15, yy);
+  guardarPie(doc, `Cierre${NOM_PERIODO[tipo]}_${p.desde}_${p.hasta}.pdf`);
+}
+
 async function vEstadisticas() {
   const v = $('#vista');
   if (estDatos) v.classList.add('refresco'); else v.innerHTML = '<p class="mute">Calculando…</p>';
   const { data, error } = await sb.rpc('estadisticas');
+  const rec = await sb.rpc('estado_cierre'); estCierre = rec && !rec.error && rec.data ? rec.data : null;
   v.classList.remove('refresco');
   if (error || !data) { v.innerHTML = `<div class="msg err">${esc(error ? error.message : 'No se pudieron calcular las estadísticas.')}</div>`; return; }
   estDatos = data;
@@ -1525,14 +1651,22 @@ async function vEstadisticas() {
   const maxMora = Math.max(...(data.mora_edades || []).map(x => num(x.monto)), 0);
   const RAMPA = ['--v-r1', '--v-r2', '--v-r3', '--v-r4'];
   const top3 = `<div class="stats" style="grid-template-columns:repeat(3,1fr)">
-      ${tile('Capital invertido', `<span title="${money(calle)}">${dineroC(calle)}</span>`, `${num(r.n_vigentes)} operación(es)`)}
+      ${tile('Base (inversión)', `<span title="${money(estCierre ? num(estCierre.base) : calle)}">${dineroC(estCierre ? num(estCierre.base) : calle)}</span>`, `${num(r.n_vigentes)} operación(es)`)}
       ${tile('Cobrado este mes', `<span title="${money(mes)}">${dineroC(mes)}</span>`, delta === null ? 'sin mes anterior' : `<span class="${delta >= 0 ? 'ok-t' : 'bad-t'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</span> vs mes anterior`)}
       ${tile('En mora', `<span title="${money(r.vencido)}">${dineroC(r.vencido)}</span>`, `${num(r.n_en_mora)} préstamo(s)`, num(r.vencido) > 0 ? 'alerta' : '')}</div>`;
-  const SEC = [['resumen', 'Resumen'], ['capital', 'Capital'], ['ganancias', 'Ganancias'], ['cobros', 'Cobros'], ['mora', 'Mora'], ['clientes', 'Clientes']];
+  const SEC = [['resumen', 'Resumen'], ['capital', 'Capital'], ['ganancias', 'Ganancias'], ['cobros', 'Cobros'], ['cierre', 'Cierre de caja'], ['mora', 'Mora'], ['clientes', 'Clientes']];
   const secciones = {
     resumen: `
+    ${estCierre ? `<div class="card viz">
+      <span class="hero-et">Base: lo que tienes invertido</span>
+      <div class="hero">${money(estCierre.base)}</div>
+      <div class="v-dos">
+        <div><i style="background:var(--v-cap)"></i><span>Capital en la calle</span><b>${money(estCierre.capital_en_calle)}</b><small class="mute">lo que tienes prestado hoy</small></div>
+        <div><i style="background:var(--v-gan)"></i><span>Ganancias capitalizadas</span><b>${money(estCierre.capitalizada)}</b><small class="mute">ganancias que ya pasaron a la base</small></div>
+      </div>
+    </div>` : ''}
     <div class="card viz">
-      <span class="hero-et">Capital invertido</span>
+      <span class="hero-et">${estCierre ? 'Por cobrar: capital + ganancia pendiente' : 'Base: lo que tienes invertido'}</span>
       <div class="hero">${money(calle)}</div>
       <p class="mute sub" style="margin:2px 0 12px">Total de tus inversiones vigentes hasta el momento, repartidas en ${num(r.n_vigentes)} operación(es). De esto:</p>
       <div class="v-split" role="img" aria-label="Capital ${money(cap)}, ganancia ${money(gan)}"><div style="width:${pCap}%;background:var(--v-cap)"></div><div style="width:${pGan}%;background:var(--v-gan)"></div></div>
@@ -1541,6 +1675,14 @@ async function vEstadisticas() {
         <div><i style="background:var(--v-gan)"></i><span>Ganancia</span><b>${money(gan)}</b><small class="mute">${pGan}% · intereses por cobrar</small></div>
       </div>
     </div>
+
+    <div class="card viz"><h2>Ganancia</h2>
+      <div class="stats" style="margin:8px 0 0">
+        ${estCierre ? tile('Ganancia del período', money(estCierre.ganancia_periodo), estCierre.ultimo_cierre ? 'desde el cierre del ' + fdate(estCierre.ultimo_cierre) : 'desde el inicio') : tile('Ganancia cobrada', money(r.ganancia_cobrada), 'de ' + money(r.ganancia_contratada) + ' contratada')}
+        ${tile('Ganancia por cobrar', money(r.ganancia_por_cobrar), 'intereses de lo vigente')}
+        ${estCierre ? tile('Ya en la base', money(estCierre.capitalizada), 'ganancias capitalizadas') : ''}
+      </div>
+      ${estCierre && me && me.es_admin ? `<p style="margin:10px 0 0"><button data-cerrar ${num(estCierre.ganancia_periodo) > 0 ? '' : 'disabled'}>Cerrar período: pasar ${money(estCierre.ganancia_periodo)} a la base</button></p>` : ''}</div>
 
     <div class="card viz">
       <div class="row"><h2 style="margin:0">Mes a mes</h2><button class="sec sm" id="e-vista">${vistaEst === 'tabla' ? 'Ver gráficos' : 'Ver tabla'}</button></div>
@@ -1564,7 +1706,8 @@ async function vEstadisticas() {
       ${tile('Ganancia por cobrar', money(r.ganancia_por_cobrar))}
       ${tile('Descuentos dados', money(r.descuentos))}
     </div>`,
-    cobros: `<div class="stats">
+    cierre: '<div id="cierre-w"><p class="mute">Calculando…</p></div>',
+    cobros: `<div id="cob-frec"><p class="mute">Calculando los cobros…</p></div><div class="stats">
       ${tile('Cobrado este mes', money(mes), delta === null ? 'sin mes anterior para comparar' : `<span class="${delta >= 0 ? 'ok-t' : 'bad-t'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</span> vs mes anterior (${money(ant)})`)}
       ${tile('Total cobrado', money(r.recaudado_total))}
       ${tile('Por vencer', money(r.prox7), `próx. 7 días · ${money(r.prox30)} en 30 días`)}
@@ -1609,6 +1752,8 @@ async function vEstadisticas() {
   document.querySelectorAll('[data-te]').forEach(b => b.onclick = () => { tabEst = b.dataset.te; vEstadisticas(); });
   $('#e-ref').onclick = () => vEstadisticas();
   const bv = $('#e-vista'); if (bv) bv.onclick = () => { vistaEst = vistaEst === 'tabla' ? 'graf' : 'tabla'; vEstadisticas(); };
+  document.querySelectorAll('[data-cerrar]').forEach(b => b.onclick = cerrarPeriodo);
+  if (tabEst === 'cobros') cargarCobrosFrec(); if (tabEst === 'cierre') montarCierre();
   activarTips({ 'g-cob': [mesesCob, SC, money], 'g-pre': [meses, [{ k: 'prestado', nombre: 'Prestado', color: '--v-cap' }], money], 'g-cli': [meses, [{ k: 'clientes_nuevos', nombre: 'Clientes nuevos', color: '--v-cap' }], n => String(num(n))] });
 }
 

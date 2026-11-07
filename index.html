@@ -224,7 +224,8 @@ async function cargarYo() {
   if (!p.es_plataforma) {
     const { data: nx } = await sb.from('negocios').select('*').maybeSingle();
     if (!nx || nx.estado !== 'activo') { await sb.auth.signOut(); me = null; setAviso('Este negocio está suspendido o no está disponible. Comunícate con el soporte de la plataforma.'); return vistaLogin(); }
-    negocio = { ...(nx.config || {}), id: nx.id, nombre: nx.nombre, codigo: nx.codigo };
+    negocio = { ...(nx.config || {}), id: nx.id, nombre: nx.nombre, codigo: nx.codigo, tipo: nx.tipo || 'prestamos' };
+    if (negocio.tipo === 'lavaderos') { await lavCargarContexto(); lavIdleArm(); }
   }
   if (!p.es_admin && p.role_id) {
     const { data: pm } = await sb.from('permisos').select('modulo,accion').eq('role_id', p.role_id);
@@ -275,6 +276,7 @@ function vistaLogin() {
 
 function tabsVisibles() {
   if (me && me.es_plataforma) return ['negocios'];
+  if (me && negocio.tipo === 'lavaderos') return lavTabs();
   const t = [];
   if (can('prestamos', 'ver')) t.push('prestamos');
   if (can('reportes', 'ver')) t.push('estadisticas');
@@ -371,7 +373,7 @@ function marcaPestana(sinSesion) {
     if (f) f.href = favNegocio();
   } catch (e) {}
 }
-const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Equipo', config: 'Mi negocio', cuenta: 'Mi clave', negocios: 'Negocios' };
+const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Equipo', config: 'Mi negocio', cuenta: 'Mi clave', negocios: 'Negocios', lav_hoy: 'Hoy', lav_reportes: 'Reportes', lav_ajustes: 'Lavadero', lav_equipo: 'Equipo' };
 
 function render() {
   marcaPestana();
@@ -382,10 +384,10 @@ function render() {
     <nav>${t.map(x => `<button data-t="${x}" class="${x === tab ? 'on' : ''}">${TAB_NOMBRE[x]}</button>`).join('')}</nav>`;
   $('#salir').onclick = async () => { await sb.auth.signOut(); me = null; cuentaSel = null; setAviso(null); vistaLogin(); };
   $('#clave').onclick = () => { tab = 'cuenta'; setAviso(null); render(); };
-  badgeAlertas();
+  if (negocio.tipo !== 'lavaderos') badgeAlertas();
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.t; cuentaSel = null; setAviso(null); render(); });
   if (!t.length && tab !== 'cuenta') { $('#vista').innerHTML = '<div class="card">Tu rol aún no tiene permisos asignados.</div>'; return; }
-  ({ prestamos: vPrestamos, estadisticas: vEstadisticas, personas: vPersonas, roles: vRoles, usuarios: vUsuarios, config: vConfig, cuenta: vMiClave, negocios: vNegocios })[tab]();
+  ({ prestamos: vPrestamos, estadisticas: vEstadisticas, personas: vPersonas, roles: vRoles, usuarios: vUsuarios, config: vConfig, cuenta: vMiClave, negocios: vNegocios, ...LAV_VISTAS })[tab]();
 }
 
 /* ---------------- CLIENTES ---------------- */
@@ -1812,8 +1814,474 @@ function activarTips(mapa) {
 
 /* ---------------- MI CLAVE ---------------- */
 /* ---------------- DUEÑO DE LA PLATAFORMA: NEGOCIOS ---------------- */
-let negocioCreado = null;
+/* ======================= LAVADEROS ======================= */
+const LAV = { ctx: null, sel: null, fecha: null, rango: 'hoy', desde: null, hasta: null, repLav: '', nuevaAbierta: false };
+const LAV_VISTAS = { lav_hoy: vLavHoy, lav_reportes: vLavReportes, lav_ajustes: vLavAjustes, lav_equipo: vLavEquipo };
+const lavTabs = () => (me && me.es_admin) ? ['lav_hoy', 'lav_reportes', 'lav_ajustes', 'lav_equipo'] : ['lav_hoy'];
+const METODOS = { efectivo: 'Efectivo', transferencia: 'Transferencia', otro: 'Otro' };
+
+async function lavCargarContexto() {
+  const { data, error } = await sb.rpc('lav_contexto');
+  LAV.ctx = error ? null : data;
+  const ls = (LAV.ctx && LAV.ctx.lavaderos) || [];
+  if (!ls.some(l => l.id === LAV.sel)) LAV.sel = (ls.find(l => l.activo) || ls[0] || {}).id || null;
+  return LAV.ctx;
+}
+
+/* Cierre de sesión a los 30 minutos sin actividad (solo negocios de lavaderos) */
+let lavIdleT = null;
+function lavIdleArm() {
+  if (lavIdleT) clearTimeout(lavIdleT);
+  lavIdleT = setTimeout(async () => {
+    if (!me || negocio.tipo !== 'lavaderos') return;
+    await sb.auth.signOut(); me = null; setAviso('Tu sesión se cerró por 30 minutos sin actividad. Entra de nuevo.'); vistaLogin();
+  }, 30 * 60 * 1000);
+}
+['click', 'keydown', 'touchstart', 'scroll'].forEach(ev => document.addEventListener(ev, () => { if (me && negocio.tipo === 'lavaderos') lavIdleArm(); }, { passive: true }));
+
+const lavDentro = (f, d) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
+function lavRango(tipo, hoyS) {
+  const d = new Date(hoyS + 'T12:00:00Z'), dow = d.getUTCDay();
+  if (tipo === 'hoy') return [hoyS, hoyS];
+  if (tipo === 'semana') return [lavDentro(hoyS, -dow), lavDentro(hoyS, 6 - dow)];
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + (tipo === 'mes_ant' ? -1 : 0);
+  const a = new Date(Date.UTC(y, m, 1, 12)), b = new Date(Date.UTC(y, m + 1, 0, 12));
+  return [a.toISOString().slice(0, 10), b.toISOString().slice(0, 10)];
+}
+const lavBarras = (filas, fmt = money) => {
+  const mx = Math.max(1, ...filas.map(f => f.v));
+  return filas.map(f => `<div class="v-fila"><span>${esc(f.n)}</span><div class="v-pista"><div class="v-rel" style="width:${Math.max(2, Math.round(f.v / mx * 100))}%;background:var(--v-cap)"></div></div><span class="v-val">${fmt(f.v)}${f.s ? `<small>${f.s}</small>` : ''}</span></div>`).join('');
+};
+const lavNum = n => Number(n || 0);
+const lavMoney = el => { if (el) el.oninput = () => formatearMiles(el); };
+
+function lavSelHtml() {
+  const L = ((LAV.ctx && LAV.ctx.lavaderos) || []).filter(l => l.activo || me.es_admin);
+  if (L.length < 2) return L.length ? `<p class="mute" style="margin:0 0 8px"><b>${esc(L[0].nombre)}</b></p>` : '';
+  return `<div class="card"><label style="margin-top:0">Lavadero</label><select id="lv-sel">${L.map(l => `<option value="${l.id}" ${l.id === LAV.sel ? 'selected' : ''}>${esc(l.nombre)}${l.activo ? '' : ' (desactivado)'}</option>`).join('')}</select></div>`;
+}
+function lavSelBind(recargar) { const s = $('#lv-sel'); if (s) s.onchange = () => { LAV.sel = s.value; recargar(); }; }
+function lavBanner() {
+  const c = LAV.ctx; if (!c || !c.plan) return '';
+  if (c.plan.vencido) return `<div class="msg err">El plan de tu negocio venció el ${fdate(c.plan.vigente_hasta)}. Puedes ver tu información, pero no registrar nada nuevo hasta renovar.</div>`;
+  const d = diasEntre(c.hoy, c.plan.vigente_hasta);
+  return d <= 7 ? `<div class="msg err">Tu plan vence el ${fdate(c.plan.vigente_hasta)} (${d === 0 ? 'hoy' : 'en ' + d + ' día(s)'}). Renuévalo para seguir registrando.</div>` : '';
+}
+
+/* ---------- HOY: lavadas, gastos y cierre del día ---------- */
+async function vLavHoy() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto();
+  if (!c) { v.innerHTML = avisoHtml() + '<div class="msg err">No se pudo cargar tu lavadero. Avisa a quien administra la plataforma.</div>'; return; }
+  const ls = c.lavaderos || [];
+  if (!ls.length) {
+    v.innerHTML = avisoHtml() + lavBanner() + (me.es_admin
+      ? '<div class="card"><h2>Crea tu primer lavadero</h2><p class="mute">Ve a la pestaña «Lavadero»: allí lo creas y defines tus tipos de vehículo, servicios, precios y lavadores.</p></div>'
+      : '<div class="card"><h2>Sin lavadero asignado</h2><p class="mute">Pídele a tu administrador que te asigne un lavadero.</p></div>');
+    return;
+  }
+  const fecha = me.es_admin && LAV.fecha ? LAV.fecha : c.hoy, esHoy = fecha === c.hoy;
+  const [rc, rd] = await Promise.all([sb.rpc('lav_catalogo', { p_lav: LAV.sel }), sb.rpc('lav_dia', { p_lav: LAV.sel, p_fecha: fecha })]);
+  if (rc.error || rd.error) { v.innerHTML = '<div class="msg err">' + esc((rc.error || rd.error).message) + '</div>'; return; }
+  const cat = rc.data, dia = rd.data, t = dia.totales, adm = me.es_admin, puede = c.puede_escribir && !dia.cerrado;
+  const ingresos = lavNum(t.ingresos_lavadas) + lavNum(t.ingresos_extra);
+  const met = Object.entries(t.por_metodo || {}).map(([k, x]) => `${METODOS[k] || k}: ${money(x)}`).join(' · ');
+  const tiposAct = cat.tipos.filter(x => x.activo), lavsAct = cat.lavadores.filter(x => x.activo);
+  v.innerHTML = avisoHtml() + lavBanner() + lavSelHtml() + `
+    ${adm ? `<div class="card"><label style="margin-top:0">Fecha</label><input type="date" id="lv-fecha" value="${fecha}" max="${c.hoy}"></div>` : ''}
+    <div class="stats">
+      ${miniTile('Lavadas', lavNum(t.n_lavadas))}
+      ${miniTile('Ingresos', money(ingresos), lavNum(t.ingresos_extra) ? 'incluye ' + money(t.ingresos_extra) + ' extra' : '')}
+      ${miniTile('Gastos', money(t.gastos))}
+      ${adm ? miniTile('Comisiones', money(t.comisiones)) : ''}
+      ${miniTile(adm ? 'Utilidad' : 'Ingresos menos gastos', money(dia.utilidad), '', 'ok-t')}
+    </div>
+    ${met ? `<p class="mute" style="margin:-4px 0 10px">${met}</p>` : ''}
+    ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
+    ${puede ? `
+    <div class="card"><div class="row"><h2 style="margin:0">Nueva lavada</h2><button class="sec sm" id="lv-tog">${LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'}</button></div>
+      <div id="lv-form" ${LAV.nuevaAbierta ? '' : 'hidden'}>
+        ${!tiposAct.length ? `<p class="mute">${adm ? 'Primero define tus tipos de vehículo y servicios en la pestaña «Lavadero».' : 'El administrador aún no ha definido los servicios de este lavadero.'}</p>` : `
+        <label>Tipo de vehículo</label><select id="lv-tipo"><option value="">Elige</option>${tiposAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
+        <label>Servicios</label><div id="lv-sv" class="mute">Elige primero el tipo de vehículo.</div>
+        <label>Quién lavó</label><select id="lv-lavador"><option value="">Elige</option>${lavsAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
+        <label>Placa (opcional)</label><input id="lv-placa" autocapitalize="characters" autocomplete="off" placeholder="ABC123">
+        <label>Cliente (opcional)</label><input id="lv-cli" autocomplete="off" placeholder="Nombre">
+        <label>Teléfono (opcional)</label><input id="lv-tel" inputmode="tel" autocomplete="off">
+        <label>Forma de pago</label><select id="lv-met">${Object.entries(METODOS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
+        <p style="margin:12px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="lv-chg"> Cambiar el valor (descuento o extra)</label></p>
+        <div id="lv-chgw" hidden><label>Valor a cobrar</label><input id="lv-valor" inputmode="numeric" autocomplete="off"><label>Motivo</label><input id="lv-motivo" autocomplete="off" placeholder="Ej: descuento cliente frecuente"></div>
+        <div class="row" style="margin-top:12px"><b>Total: <span id="lv-total">$0</span></b></div>
+        <div id="lv-msg"></div>
+        <div style="margin-top:10px"><button id="lv-go" style="width:100%">Registrar lavada</button></div>`}
+      </div></div>` : ''}
+    <div class="card"><h2>Lavadas del día (${dia.lavadas.filter(x => x.estado === 'activa').length})</h2>
+      ${dia.lavadas.length ? dia.lavadas.map(x => `
+        <div class="item ${x.estado === 'activa' ? '' : 'off'}">
+          <div class="row"><div><b>#${x.consecutivo}</b> ${esc(x.tipo)}${x.placa ? ' · ' + esc(x.placa) : ''}${x.estado === 'anulada' ? ' <span class="tag bad">anulada</span>' : ''}
+            <div class="mute" style="font-size:12.5px">${x.items.map(i => esc(i.nombre)).join(' + ')} · lavó ${esc(x.lavador)}${x.cliente ? ' · ' + esc(x.cliente) : ''}${x.tel ? ' · ' + esc(x.tel) : ''}</div>
+            ${x.motivo ? `<div class="mute" style="font-size:12px">Valor lista ${money(x.valor_lista)} · ${esc(x.motivo)}</div>` : ''}
+            ${x.estado === 'anulada' && x.motivo_anulacion ? `<div class="mute" style="font-size:12px">Motivo: ${esc(x.motivo_anulacion)}</div>` : ''}</div>
+            <div style="text-align:right"><b>${money(x.valor)}</b><div class="mute" style="font-size:12px">${METODOS[x.metodo] || x.metodo}${adm && x.comision != null ? ' · com. ' + money(x.comision) : ''}</div>
+            ${puede && x.estado === 'activa' ? `<button class="sec sm" data-anl="${x.id}" style="margin-top:4px">Anular</button>` : ''}</div></div></div>`).join('')
+        : '<p class="mute">Todavía no hay lavadas este día.</p>'}</div>
+    <div class="card"><h2>Gastos e ingresos extra</h2>
+      ${puede ? `<div class="row" style="gap:8px"><select id="lm-tipo" style="flex:0 0 40%"><option value="gasto">Gasto</option><option value="ingreso">Ingreso extra</option></select><input id="lm-val" inputmode="numeric" placeholder="Valor" autocomplete="off"></div>
+        <input id="lm-con" placeholder="Concepto (jabón, agua, venta de ambientador…)" autocomplete="off" style="margin-top:8px"><div id="lm-msg"></div>
+        <div style="margin:8px 0 6px"><button id="lm-go" class="sec">Agregar</button></div>` : ''}
+      ${dia.movimientos.length ? dia.movimientos.map(m => `<div class="item ${m.estado === 'activo' ? '' : 'off'}"><div class="row"><div>${esc(m.concepto)} <span class="tag">${m.tipo === 'gasto' ? 'gasto' : 'ingreso extra'}</span>${m.estado === 'anulado' ? ' <span class="tag bad">anulado</span>' : ''}</div>
+        <div style="text-align:right"><b>${m.tipo === 'gasto' ? '-' : ''}${money(m.valor)}</b>${puede && m.estado === 'activo' ? `<div><button class="sec sm" data-anm="${m.id}">Anular</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin movimientos.</p>'}</div>
+    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p><button id="lv-cerrar" class="bad" style="width:100%">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}`;
+
+  lavSelBind(vLavHoy);
+  if ($('#lv-fecha')) $('#lv-fecha').onchange = e => { LAV.fecha = e.target.value || null; vLavHoy(); };
+  if ($('#lv-reab')) $('#lv-reab').onclick = async () => {
+    if (!confirm('¿Reabrir este día? Podrás registrar y anular de nuevo, y tendrás que cerrarlo otra vez.')) return;
+    const { error } = await sb.rpc('lav_reabrir_dia', { p_lav: LAV.sel, p_fecha: fecha });
+    setAviso(error ? error.message : 'Día reabierto.', error ? 'err' : 'ok'); vLavHoy();
+  };
+  if ($('#lv-tog')) $('#lv-tog').onclick = () => { LAV.nuevaAbierta = !LAV.nuevaAbierta; $('#lv-form').hidden = !LAV.nuevaAbierta; $('#lv-tog').textContent = LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'; };
+  if ($('#lv-tipo')) {
+    const total = () => {
+      const cks = [...document.querySelectorAll('#lv-sv input:checked')];
+      $('#lv-total').textContent = money(cks.reduce((s, x) => s + Number(x.dataset.p), 0));
+    };
+    $('#lv-tipo').onchange = () => {
+      const tid = $('#lv-tipo').value, sv = cat.servicios.filter(s => s.tipo_id === tid && s.activo);
+      $('#lv-sv').innerHTML = !tid ? 'Elige primero el tipo de vehículo.' : (sv.length ? sv.map(s => `<label style="display:flex;align-items:center;margin:6px 0;color:var(--ink);font-size:15px"><input type="checkbox" value="${s.id}" data-p="${s.precio}"><span style="flex:1">${esc(s.nombre)}</span><b>${money(s.precio)}</b></label>`).join('') : 'Este tipo no tiene servicios activos.');
+      document.querySelectorAll('#lv-sv input').forEach(i => i.onchange = total); total();
+    };
+    $('#lv-chg').onchange = () => { $('#lv-chgw').hidden = !$('#lv-chg').checked; };
+    lavMoney($('#lv-valor'));
+    $('#lv-placa').oninput = e => { e.target.value = e.target.value.toUpperCase(); };
+    $('#lv-go').onclick = async () => {
+      const sv = [...document.querySelectorAll('#lv-sv input:checked')].map(x => x.value), chg = $('#lv-chg').checked;
+      if (!$('#lv-tipo').value) return alertaEn('lv-msg', 'Elige el tipo de vehículo.');
+      if (!sv.length) return alertaEn('lv-msg', 'Elige al menos un servicio.');
+      if (!$('#lv-lavador').value) return alertaEn('lv-msg', 'Elige quién lavó.');
+      if (chg && !$('#lv-valor').value.trim()) return alertaEn('lv-msg', 'Escribe el valor a cobrar.');
+      $('#lv-go').disabled = true;
+      const { error } = await sb.rpc('lav_registrar_lavada', {
+        p_lav: LAV.sel, p_tipo: $('#lv-tipo').value, p_servicios: sv, p_lavador: $('#lv-lavador').value, p_placa: $('#lv-placa').value,
+        p_cliente: $('#lv-cli').value, p_tel: $('#lv-tel').value, p_metodo: $('#lv-met').value,
+        p_valor: chg ? entero($('#lv-valor').value) : null, p_motivo: chg ? $('#lv-motivo').value : null, p_fecha: esHoy ? null : fecha });
+      if (error) { alertaEn('lv-msg', error.message); $('#lv-go').disabled = false; return; }
+      setAviso('Lavada registrada.', 'ok'); vLavHoy();
+    };
+  }
+  document.querySelectorAll('[data-anl]').forEach(b => b.onclick = async () => {
+    const m = prompt('¿Por qué anulas esta lavada?'); if (m === null) return;
+    const { error } = await sb.rpc('lav_anular_lavada', { p_id: b.dataset.anl, p_motivo: m });
+    setAviso(error ? error.message : 'Lavada anulada.', error ? 'err' : 'ok'); vLavHoy();
+  });
+  document.querySelectorAll('[data-anm]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Anular este movimiento?')) return;
+    const { error } = await sb.rpc('lav_anular_mov', { p_id: b.dataset.anm });
+    setAviso(error ? error.message : 'Movimiento anulado.', error ? 'err' : 'ok'); vLavHoy();
+  });
+  if ($('#lm-go')) {
+    lavMoney($('#lm-val'));
+    $('#lm-go').onclick = async () => {
+      if (!$('#lm-con').value.trim() || !entero($('#lm-val').value)) return alertaEn('lm-msg', 'Escribe el concepto y el valor.');
+      $('#lm-go').disabled = true;
+      const { error } = await sb.rpc('lav_registrar_mov', { p_lav: LAV.sel, p_tipo: $('#lm-tipo').value, p_concepto: $('#lm-con').value, p_valor: entero($('#lm-val').value), p_fecha: esHoy ? null : fecha });
+      if (error) { alertaEn('lm-msg', error.message); $('#lm-go').disabled = false; return; }
+      setAviso('Movimiento guardado.', 'ok'); vLavHoy();
+    };
+  }
+  if ($('#lv-cerrar')) $('#lv-cerrar').onclick = async () => {
+    if (!confirm('¿Cerrar la caja del ' + fdate(fecha) + '? Después no se podrá registrar ni anular nada de ese día.')) return;
+    const { error } = await sb.rpc('lav_cerrar_dia', { p_lav: LAV.sel, p_fecha: esHoy ? null : fecha, p_nota: null });
+    setAviso(error ? error.message : 'Caja cerrada. Quedó guardado el total del día.', error ? 'err' : 'ok'); vLavHoy();
+  };
+}
+
+/* ---------- REPORTES (administrador) ---------- */
+async function vLavReportes() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto(); if (!c) { v.innerHTML = '<div class="msg err">No se pudo cargar.</div>'; return; }
+  if (LAV.rango !== 'rango') [LAV.desde, LAV.hasta] = lavRango(LAV.rango, c.hoy);
+  if (!LAV.desde || !LAV.hasta) [LAV.desde, LAV.hasta] = lavRango('hoy', c.hoy);
+  const { data: r, error } = await sb.rpc('lav_reporte', { p_lav: LAV.repLav || null, p_desde: LAV.desde, p_hasta: LAV.hasta });
+  if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + '</div>'; return; }
+  const t = r.totales, ing = lavNum(t.ingresos_lavadas) + lavNum(t.ingresos_extra), util = ing - lavNum(t.gastos) - lavNum(t.comisiones);
+  const R = [['hoy', 'Hoy'], ['semana', 'Esta semana'], ['mes', 'Este mes'], ['mes_ant', 'Mes anterior'], ['rango', 'Fechas']];
+  const ls = c.lavaderos || [];
+  v.innerHTML = avisoHtml() + lavBanner() + `
+    <div class="card"><div class="pest" role="tablist" style="display:flex;gap:6px;flex-wrap:wrap">${R.map(([k, n]) => `<button class="${LAV.rango === k ? '' : 'sec'} sm" data-rg="${k}">${n}</button>`).join('')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><input type="date" id="rp-d" value="${LAV.desde}" style="min-width:0"><input type="date" id="rp-h" value="${LAV.hasta}" style="min-width:0"></div>
+      <p class="mute" style="margin:6px 0 0">Del ${fdate(LAV.desde)} al ${fdate(LAV.hasta)}</p>
+      ${ls.length > 1 ? `<label>Lavadero</label><select id="rp-lav"><option value="">Todos los lavaderos</option>${ls.map(l => `<option value="${l.id}" ${l.id === LAV.repLav ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select>` : ''}</div>
+    <div class="stats">
+      ${miniTile('Ingresos', money(ing), lavNum(t.n_lavadas) + ' lavada(s)')}
+      ${miniTile('Gastos', money(t.gastos))}
+      ${miniTile('Comisiones lavadores', money(t.comisiones))}
+      ${miniTile('Utilidad', money(util), '', util < 0 ? 'alerta' : 'ok-t')}
+    </div>
+    ${r.por_lavadero.length > 1 ? `<div class="card viz"><h2>Por lavadero</h2>${r.por_lavadero.map(l => {
+      const i = lavNum(l.ingresos) + lavNum(l.extra), u = i - lavNum(l.gastos) - lavNum(l.comisiones);
+      return `<div class="item"><div class="row"><div><b>${esc(l.nombre)}</b><div class="mute" style="font-size:12.5px">${l.n} lavada(s) · gastos ${money(l.gastos)} · comisiones ${money(l.comisiones)}</div></div><div style="text-align:right"><b>${money(u)}</b><div class="mute" style="font-size:12px">utilidad de ${money(i)}</div></div></div></div>`; }).join('')}</div>` : ''}
+    <div class="card"><h2>Lavadores</h2>${r.por_lavador.length ? r.por_lavador.map(w => `
+      <div class="item ${w.activo ? '' : 'off'}"><div class="row"><div><b>${esc(w.nombre)}</b>${ls.length > 1 ? ` <span class="tag">${esc(w.lavadero)}</span>` : ''}
+        <div class="mute" style="font-size:12.5px">${w.n} lavada(s) · produjo ${money(w.produccion)} · ganó ${money(w.comision_periodo)} en el período</div>
+        <div class="mute" style="font-size:12.5px">Total ganado ${money(w.comision_total)} · pagado ${money(w.pagado_total)}</div></div>
+        <div style="text-align:right"><div class="mute" style="font-size:12px">Se le debe</div><b class="${lavNum(w.debe) > 0 ? '' : 'ok-t'}">${money(w.debe)}</b>
+        ${me.es_admin && lavNum(w.debe) > 0 && c.puede_escribir ? `<div><button class="sm" data-pag="${w.id}" data-n="${esc(w.nombre)}" data-d="${w.debe}" style="margin-top:4px">Pagar</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin lavadores.</p>'}</div>
+    <div class="card viz"><h2>Servicios más vendidos</h2>${r.por_servicio.length ? lavBarras(r.por_servicio.map(s => ({ n: s.nombre, v: lavNum(s.valor), s: s.n === 1 ? '1 vez' : s.n + ' veces' }))) : '<p class="mute">Sin ventas en el período.</p>'}
+      <h3>Por tipo de vehículo</h3>${r.por_tipo.length ? lavBarras(r.por_tipo.map(s => ({ n: s.nombre, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}
+      <h3>Por forma de pago</h3>${r.por_metodo.length ? lavBarras(r.por_metodo.map(s => ({ n: METODOS[s.metodo] || s.metodo, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}</div>
+    ${r.por_dia.length ? `<div class="card"><h2>Día por día</h2><table class="matrix tabla"><thead><tr><th>Día</th><th>Lavadas</th><th>Ingresos</th><th>Gastos</th></tr></thead><tbody>${r.por_dia.map(d => `<tr><td>${fdate(d.fecha)}</td><td>${d.n}</td><td>${money(d.ingresos)}</td><td>${money(d.gastos)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div class="card"><h2>Cajas cerradas</h2>${r.cierres.length ? r.cierres.map(x => `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}<div class="mute" style="font-size:12.5px">${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div></div><b>${money(x.utilidad)}</b></div></div>`).join('') : '<p class="mute">Sin cajas cerradas en el período.</p>'}</div>
+    ${r.pagos_lavadores.length ? `<div class="card"><h2>Pagos a lavadores</h2>${r.pagos_lavadores.map(p => `<div class="item"><div class="row"><div>${esc(p.lavador)} <span class="mute">${fdate(p.fecha)}${p.nota ? ' · ' + esc(p.nota) : ''}</span></div><div><b>${money(p.monto)}</b> ${c.puede_escribir ? `<button class="sec sm" data-anp="${p.id}">Anular</button>` : ''}</div></div></div>`).join('')}</div>` : ''}`;
+  document.querySelectorAll('[data-rg]').forEach(b => b.onclick = () => { LAV.rango = b.dataset.rg; vLavReportes(); });
+  $('#rp-d').onchange = $('#rp-h').onchange = () => { LAV.rango = 'rango'; LAV.desde = $('#rp-d').value; LAV.hasta = $('#rp-h').value; vLavReportes(); };
+  if ($('#rp-lav')) $('#rp-lav').onchange = e => { LAV.repLav = e.target.value; vLavReportes(); };
+  document.querySelectorAll('[data-pag]').forEach(b => b.onclick = async () => {
+    const t = prompt('¿Cuánto le pagas a ' + b.dataset.n + '? (se le debe ' + money(b.dataset.d) + ')', String(Math.round(b.dataset.d))); if (t === null) return;
+    const { error: e } = await sb.rpc('lav_pagar_lavador', { p_lavador: b.dataset.pag, p_monto: entero(t), p_fecha: null, p_nota: null });
+    setAviso(e ? e.message : 'Pago registrado.', e ? 'err' : 'ok'); vLavReportes();
+  });
+  document.querySelectorAll('[data-anp]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Anular este pago al lavador?')) return;
+    const { error: e } = await sb.rpc('lav_anular_pago_lavador', { p_id: b.dataset.anp });
+    setAviso(e ? e.message : 'Pago anulado.', e ? 'err' : 'ok'); vLavReportes();
+  });
+}
+
+/* ---------- LAVADERO: lavaderos, tipos, servicios, precios y lavadores (administrador) ---------- */
+async function vLavAjustes() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto(); if (!c) { v.innerHTML = '<div class="msg err">No se pudo cargar.</div>'; return; }
+  const ls = c.lavaderos || [], p = c.plan, puede = c.puede_escribir;
+  let cat = null;
+  if (LAV.sel) { const r = await sb.rpc('lav_catalogo', { p_lav: LAV.sel }); if (!r.error) cat = r.data; }
+  const sel = ls.find(l => l.id === LAV.sel);
+  const usados = ls.filter(l => l.activo).length;
+  v.innerHTML = avisoHtml() + lavBanner() + `
+    <div class="card"><h2>Tus lavaderos</h2>
+      <p class="mute" style="margin-top:0">Tu plan permite <b>${p.max_lavaderos}</b> lavadero(s) activos (usas ${usados}). Vigente hasta el ${fdate(p.vigente_hasta)}.</p>
+      ${ls.map(l => `<div class="item ${l.activo ? '' : 'off'}"><div class="row"><div><b>${esc(l.nombre)}</b>${l.activo ? '' : ' <span class="tag">desactivado</span>'}<div class="mute" style="font-size:12.5px">${esc(l.direccion || '')}${l.direccion ? ' · ' : ''}Lavador gana ${lavNum(l.comision_pct)}%</div></div>
+        <span><button class="sec sm" data-le="${l.id}">Editar</button></span></div>
+        <div id="le-${l.id}" hidden style="margin-top:8px"><label>Nombre</label><input id="le-n-${l.id}" value="${esc(l.nombre)}"><label>Dirección (opcional)</label><input id="le-d-${l.id}" value="${esc(l.direccion || '')}">
+          <label>Porcentaje que gana el lavador (%)</label><input id="le-c-${l.id}" inputmode="decimal" value="${lavNum(l.comision_pct)}">
+          <p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="le-a-${l.id}" ${l.activo ? 'checked' : ''}> Lavadero activo</label></p>
+          <div id="le-m-${l.id}"></div><div style="margin-top:8px"><button class="sm" data-lg="${l.id}">Guardar</button></div></div></div>`).join('') || '<p class="mute">Todavía no tienes lavaderos.</p>'}
+      ${puede && usados < p.max_lavaderos ? `<h3>Nuevo lavadero</h3><label>Nombre</label><input id="ln-n" placeholder="Ej: Sede Centro"><label>Dirección (opcional)</label><input id="ln-d"><label>Porcentaje que gana el lavador (%)</label><input id="ln-c" inputmode="decimal" value="40"><div id="ln-m"></div><div style="margin-top:10px"><button id="ln-go">Crear lavadero</button></div>` : (usados >= p.max_lavaderos ? '<p class="mute">Ya usas todos los lavaderos de tu plan. Para agregar otro, pídelo a la plataforma.</p>' : '')}</div>
+    ${ls.length ? `<div class="card"><label style="margin-top:0">Estás configurando</label><select id="lv-sel">${ls.map(l => `<option value="${l.id}" ${l.id === LAV.sel ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select></div>` : ''}
+    ${cat && sel ? lavCatalogoHtml(cat, sel, puede) : ''}`;
+  lavSelBind(vLavAjustes);
+  document.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { const x = $('#le-' + b.dataset.le); x.hidden = !x.hidden; });
+  document.querySelectorAll('[data-lg]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.lg, pct = decimal($('#le-c-' + id).value);
+    if (isNaN(pct)) return alertaEn('le-m-' + id, 'Escribe un porcentaje válido.');
+    const { error } = await sb.rpc('lav_editar_lavadero', { p_id: id, p_nombre: $('#le-n-' + id).value, p_direccion: $('#le-d-' + id).value, p_comision: pct, p_activo: $('#le-a-' + id).checked });
+    if (error) return alertaEn('le-m-' + id, error.message);
+    setAviso('Lavadero actualizado.', 'ok'); vLavAjustes();
+  });
+  if ($('#ln-go')) $('#ln-go').onclick = async () => {
+    const pct = decimal($('#ln-c').value);
+    if (!$('#ln-n').value.trim()) return alertaEn('ln-m', 'Escribe el nombre del lavadero.');
+    if (isNaN(pct)) return alertaEn('ln-m', 'Escribe un porcentaje válido.');
+    $('#ln-go').disabled = true;
+    const { data, error } = await sb.rpc('lav_crear_lavadero', { p_nombre: $('#ln-n').value, p_direccion: $('#ln-d').value, p_comision: pct });
+    if (error) { alertaEn('ln-m', error.message); $('#ln-go').disabled = false; return; }
+    LAV.sel = data; setAviso('Lavadero creado. Ahora define sus tipos de vehículo y servicios.', 'ok'); vLavAjustes();
+  };
+  lavCatalogoBind(cat);
+}
+
+function lavCatalogoHtml(cat, sel, puede) {
+  const tiposAct = cat.tipos.filter(t => t.activo);
+  const filaEd = (pref, id, campos, extra = '') => `<div id="${pref}-ed-${id}" hidden style="margin-top:8px">${campos}<div id="${pref}-m-${id}"></div><div style="margin-top:8px"><button class="sm" data-${pref}-go="${id}">Guardar</button></div></div>`;
+  return `
+    <div class="card"><h2>Tipos de vehículo y servicios de «${esc(sel.nombre)}»</h2>
+      <p class="mute" style="margin-top:0">Arma este lavadero a tu medida: los tipos de vehículo que atiendes, los servicios y el precio de cada uno. Cada lavadero tiene su propia lista.</p>
+      ${!cat.tipos.length && puede ? '<div class="msg ok">Aún no hay tipos de vehículo. Puedes cargar una lista de ejemplo (carro, camioneta y moto) y editarla, o crearlos tú mismo abajo. <div style="margin-top:8px"><button class="sec sm" id="cx-ej">Cargar ejemplo</button></div></div>' : ''}
+      ${cat.tipos.map(t => `
+        <div class="item ${t.activo ? '' : 'off'}"><div class="row"><b>${esc(t.nombre)}${t.activo ? '' : ' <span class="tag">desactivado</span>'}</b><span><button class="sec sm" data-tp="${t.id}">Editar</button></span></div>
+          ${puede ? filaEd('tp', t.id, `<label>Nombre del tipo</label><input id="tp-n-${t.id}" value="${esc(t.nombre)}"><p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="tp-a-${t.id}" ${t.activo ? 'checked' : ''}> Activo</label></p>`) : ''}
+          ${cat.servicios.filter(s => s.tipo_id === t.id).map(s => `
+            <div class="row ${s.activo ? '' : 'off'}" style="margin-top:8px;padding-left:10px;border-left:3px solid var(--line)"><div>${esc(s.nombre)}${s.activo ? '' : ' <span class="tag">desactivado</span>'}</div>
+              <div><b>${money(s.precio)}</b> ${puede ? `<button class="sec sm" data-sv="${s.id}">Editar</button>` : ''}</div></div>
+            ${puede ? filaEd('sv', s.id, `<label>Nombre del servicio</label><input id="sv-n-${s.id}" value="${esc(s.nombre)}"><label>Precio</label><input id="sv-p-${s.id}" inputmode="numeric" value="${milesTxt(s.precio)}"><p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="sv-a-${s.id}" ${s.activo ? 'checked' : ''}> Activo</label></p>`) : ''}`).join('')}
+          ${puede ? `<div class="row" style="margin-top:10px;gap:8px"><input id="ns-n-${t.id}" placeholder="Nuevo servicio (ej: Lavada completa)"><input id="ns-p-${t.id}" inputmode="numeric" placeholder="Precio" style="flex:0 0 32%"><button class="sm" data-ns="${t.id}">+</button></div><div id="ns-m-${t.id}"></div>` : ''}
+        </div>`).join('')}
+      ${puede ? `<h3>Nuevo tipo de vehículo</h3><div class="row" style="gap:8px"><input id="nt-n" placeholder="Ej: Tractomula, Bus, Moto"><button id="nt-go" class="sm">Agregar</button></div><div id="nt-m"></div>` : ''}</div>
+    <div class="card"><h2>Lavadores de «${esc(sel.nombre)}»</h2>
+      ${cat.lavadores.map(w => `<div class="item ${w.activo ? '' : 'off'}"><div class="row"><div><b>${esc(w.nombre)}</b>${w.telefono ? ' <span class="mute">' + esc(w.telefono) + '</span>' : ''}${w.activo ? '' : ' <span class="tag">desactivado</span>'}</div>${puede ? `<button class="sec sm" data-lw="${w.id}">Editar</button>` : ''}</div>
+        ${puede ? filaEd('lw', w.id, `<label>Nombre</label><input id="lw-n-${w.id}" value="${esc(w.nombre)}"><label>Teléfono (opcional)</label><input id="lw-t-${w.id}" inputmode="tel" value="${esc(w.telefono || '')}"><p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="lw-a-${w.id}" ${w.activo ? 'checked' : ''}> Activo</label></p>`) : ''}</div>`).join('') || '<p class="mute">Todavía no hay lavadores.</p>'}
+      ${puede ? `<h3>Nuevo lavador</h3><label>Nombre</label><input id="nw-n"><label>Teléfono (opcional)</label><input id="nw-t" inputmode="tel"><div id="nw-m"></div><div style="margin-top:10px"><button id="nw-go">Agregar lavador</button></div>` : ''}
+      <p class="mute" style="margin-bottom:0">El lavador gana el ${lavNum(sel.comision_pct)}% de cada lavada. Puedes cambiar ese porcentaje en «Tus lavaderos»; el cambio aplica a las lavadas nuevas.</p></div>`;
+}
+
+function lavCatalogoBind(cat) {
+  const L = LAV.sel, hecho = (t, ok = true) => { setAviso(t, ok ? 'ok' : 'err'); vLavAjustes(); };
+  const tog = (attr, pref) => document.querySelectorAll('[data-' + attr + ']').forEach(b => b.onclick = () => { const x = $('#' + pref + '-ed-' + b.dataset[attr]); x.hidden = !x.hidden; });
+  tog('tp', 'tp'); tog('sv', 'sv'); tog('lw', 'lw');
+  document.querySelectorAll('[id^="sv-p-"],[id^="ns-p-"]').forEach(lavMoney);
+  if ($('#cx-ej')) $('#cx-ej').onclick = async () => { const { error } = await sb.rpc('lav_sembrar_ejemplo', { p_lav: L }); hecho(error ? error.message : 'Lista de ejemplo cargada. Edita los nombres y precios a tu gusto.', !error); };
+  if ($('#nt-go')) $('#nt-go').onclick = async () => {
+    if (!$('#nt-n').value.trim()) return alertaEn('nt-m', 'Escribe el nombre del tipo de vehículo.');
+    const { error } = await sb.rpc('lav_guardar_tipo', { p_lav: L, p_id: null, p_nombre: $('#nt-n').value, p_activo: true });
+    if (error) return alertaEn('nt-m', error.message); hecho('Tipo de vehículo agregado. Ahora agrégale sus servicios.');
+  };
+  document.querySelectorAll('[data-tp-go]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.tpGo, { error } = await sb.rpc('lav_guardar_tipo', { p_lav: L, p_id: id, p_nombre: $('#tp-n-' + id).value, p_activo: $('#tp-a-' + id).checked });
+    if (error) return alertaEn('tp-m-' + id, error.message); hecho('Tipo actualizado.');
+  });
+  document.querySelectorAll('[data-ns]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.ns;
+    if (!$('#ns-n-' + id).value.trim() || !$('#ns-p-' + id).value.trim()) return alertaEn('ns-m-' + id, 'Escribe el nombre y el precio del servicio.');
+    const { error } = await sb.rpc('lav_guardar_servicio', { p_lav: L, p_id: null, p_tipo: id, p_nombre: $('#ns-n-' + id).value, p_precio: entero($('#ns-p-' + id).value), p_activo: true });
+    if (error) return alertaEn('ns-m-' + id, error.message); hecho('Servicio agregado.');
+  });
+  document.querySelectorAll('[data-sv-go]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.svGo, s = cat.servicios.find(x => x.id === id);
+    if (!$('#sv-p-' + id).value.trim()) return alertaEn('sv-m-' + id, 'Escribe el precio.');
+    const { error } = await sb.rpc('lav_guardar_servicio', { p_lav: L, p_id: id, p_tipo: s.tipo_id, p_nombre: $('#sv-n-' + id).value, p_precio: entero($('#sv-p-' + id).value), p_activo: $('#sv-a-' + id).checked });
+    if (error) return alertaEn('sv-m-' + id, error.message); hecho('Servicio actualizado.');
+  });
+  if ($('#nw-go')) $('#nw-go').onclick = async () => {
+    if (!$('#nw-n').value.trim()) return alertaEn('nw-m', 'Escribe el nombre del lavador.');
+    const { error } = await sb.rpc('lav_guardar_lavador', { p_lav: L, p_id: null, p_nombre: $('#nw-n').value, p_telefono: $('#nw-t').value, p_activo: true });
+    if (error) return alertaEn('nw-m', error.message); hecho('Lavador agregado.');
+  };
+  document.querySelectorAll('[data-lw-go]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.lwGo, { error } = await sb.rpc('lav_guardar_lavador', { p_lav: L, p_id: id, p_nombre: $('#lw-n-' + id).value, p_telefono: $('#lw-t-' + id).value, p_activo: $('#lw-a-' + id).checked });
+    if (error) return alertaEn('lw-m-' + id, error.message); hecho('Lavador actualizado.');
+  });
+}
+
+/* ---------- EQUIPO: supervisores y los lavaderos que atiende cada uno (administrador) ---------- */
+async function vLavEquipo() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto(); if (!c) { v.innerHTML = '<div class="msg err">No se pudo cargar.</div>'; return; }
+  const [ru, rr, rb, ra] = await Promise.all([sb.from('perfiles').select('*').order('creado_en'), sb.from('roles').select('id,nombre').eq('activo', true), sb.rpc('usuarios_bloqueados'), sb.rpc('lav_asignaciones')]);
+  if (ru.error) { v.innerHTML = '<div class="msg err">' + esc(ru.error.message) + '</div>'; return; }
+  const rol = (rr.data || []).find(r => r.nombre === 'Supervisor'), asig = ra.data || {}, ls = (c.lavaderos || []).filter(l => l.activo);
+  const bloq = new Set((rb.data || []).map(b => b.id));
+  const checks = (pref, sel) => ls.map(l => `<label style="display:flex;align-items:center;margin:4px 0;color:var(--ink);font-size:15px"><input type="checkbox" class="${pref}" value="${l.id}" ${sel.includes(l.id) ? 'checked' : ''}>${esc(l.nombre)}</label>`).join('') || '<p class="mute">Primero crea un lavadero.</p>';
+  v.innerHTML = avisoHtml() + lavBanner() + `
+    <div class="card"><h2>Agregar un supervisor</h2>
+      <p class="mute" style="font-size:13px;margin-top:0">El supervisor registra lavadas, gastos y el cierre del día en los lavaderos que le asignes. No ve precios, reportes ni lo que ganan los lavadores. Entra con <b>usuario@${esc(negocio.codigo)}</b> y su clave.</p>
+      ${rol ? '' : '<div class="msg err">No se encontró el rol Supervisor en tu negocio. Avisa a la plataforma.</div>'}
+      <label>Nombre</label><input id="eq-nom"><label>Usuario</label><input id="eq-usr" autocapitalize="none" spellcheck="false" placeholder="Ej: sara, caja1">
+      <label>Clave inicial</label><input id="eq-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
+      <label>Lavaderos donde trabaja</label>${checks('eq-l', [])}
+      <div id="eq-msg"></div><div style="margin-top:12px"><button id="eq-add" ${rol ? '' : 'disabled'}>Crear supervisor</button></div></div>
+    <div class="card"><h2>Tu equipo</h2>${ru.data.map(u => `
+      <div class="item ${u.activo ? '' : 'off'}"><div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">${esc(cuentaDe(u))}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : '<span class="tag">supervisor</span>'}${u.activo ? '' : ' <span class="tag">desactivado</span>'}${bloq.has(u.id) ? ' <span class="tag bad">bloqueado</span>' : ''}</div></div>
+        ${u.es_admin ? '' : `<div style="margin-top:6px"><div class="mute" style="font-size:12.5px">Lavaderos asignados:</div>${checks('as-' + u.id, asig[u.id] || [])}<div id="as-m-${u.id}"></div>
+          <div class="row" style="flex-wrap:wrap;margin-top:6px"><button class="sm" data-asg="${u.id}">Guardar lavaderos</button><span><button class="sec sm" data-clv="${u.id}">Cambiar clave</button> <button class="sec sm" data-uac="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>${bloq.has(u.id) ? ` <button class="sm" data-dsb="${u.id}">Desbloquear</button>` : ''}</span></div>
+          <div class="row" id="cl-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 6)" id="cl-i-${u.id}"><button class="sm" data-clgo="${u.id}">Guardar</button></div>`}</div>`).join('')}</div>`;
+  $('#eq-add').onclick = async () => {
+    const nombre = $('#eq-nom').value.trim(), usuario = limpiarUsuario($('#eq-usr').value), clave = $('#eq-pass').value, lavs = [...document.querySelectorAll('.eq-l:checked')].map(x => x.value);
+    if (/[^a-z0-9._-]/.test(usuario) || usuario.length < 3) return alertaEn('eq-msg', 'El usuario debe tener mínimo 3 letras o números, sin espacios, tildes ni @.');
+    if (!nombre || clave.length < 6) return alertaEn('eq-msg', 'Escribe el nombre y una clave de mínimo 6 caracteres.');
+    if (!lavs.length) return alertaEn('eq-msg', 'Elige al menos un lavadero para este supervisor.');
+    $('#eq-add').disabled = true;
+    const { data: id, error } = await sb.rpc('admin_crear_usuario', { p_nombre: nombre, p_usuario: usuario, p_clave: clave, p_rol: rol.id });
+    if (error) { alertaEn('eq-msg', error.message); $('#eq-add').disabled = false; return; }
+    const r2 = await sb.rpc('lav_asignar', { p_perfil: id, p_lavaderos: lavs });
+    setAviso(r2.error ? 'El usuario se creó pero no se pudo asignar el lavadero: ' + r2.error.message : `Supervisor creado. Entra con ${usuario}@${negocio.codigo} y la clave que le diste.`, r2.error ? 'err' : 'ok'); vLavEquipo();
+  };
+  document.querySelectorAll('[data-asg]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.asg, lavs = [...document.querySelectorAll('.as-' + id + ':checked')].map(x => x.value);
+    const { error } = await sb.rpc('lav_asignar', { p_perfil: id, p_lavaderos: lavs });
+    if (error) return alertaEn('as-m-' + id, error.message); setAviso('Lavaderos del supervisor actualizados.', 'ok'); vLavEquipo();
+  });
+  document.querySelectorAll('[data-clv]').forEach(b => b.onclick = () => { const x = $('#cl-' + b.dataset.clv); x.hidden = !x.hidden; });
+  document.querySelectorAll('[data-clgo]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.clgo, k = $('#cl-i-' + id).value;
+    if (k.length < 6) return alertaEn('as-m-' + id, 'La clave debe tener mínimo 6 caracteres.');
+    const { error } = await sb.rpc('admin_cambiar_clave', { p_id: id, p_clave: k });
+    setAviso(error ? error.message : 'Clave cambiada. Entrégasela al supervisor.', error ? 'err' : 'ok'); vLavEquipo();
+  });
+  document.querySelectorAll('[data-uac]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('perfiles').update({ activo: b.dataset.v !== 'true' }).eq('id', b.dataset.uac);
+    setAviso(error ? error.message : null); vLavEquipo();
+  });
+  document.querySelectorAll('[data-dsb]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('admin_desbloquear', { p_id: b.dataset.dsb });
+    setAviso(error ? error.message : 'Usuario desbloqueado.', error ? 'err' : 'ok'); vLavEquipo();
+  });
+}
+
+/* ---------- PANEL DE LA PLATAFORMA: negocios de lavaderos (alquiler) ---------- */
+let platSec = 'prestamos', lavNegCreado = null;
 async function vNegocios() {
+  if (platSec === 'lavaderos') await vLavNegocios(); else await vNegociosPrest();
+  $('#vista').insertAdjacentHTML('afterbegin', `<div class="card" style="display:flex;gap:8px"><button class="${platSec === 'prestamos' ? '' : 'sec'}" style="flex:1" data-sec="prestamos">Préstamos</button><button class="${platSec === 'lavaderos' ? '' : 'sec'}" style="flex:1" data-sec="lavaderos">Lavaderos</button></div>`);
+  document.querySelectorAll('[data-sec]').forEach(b => b.onclick = () => { platSec = b.dataset.sec; setAviso(null); vNegocios(); });
+}
+async function vLavNegocios() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const { data: ls, error } = await sb.rpc('plataforma_lav_resumen');
+  if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + (/plataforma_lav_resumen/.test(error.message) ? ' Falta correr 19_lavaderos.sql en Supabase.' : '') + '</div>'; return; }
+  const ini = new Date(); ini.setDate(ini.getDate() + 30); const por30 = ini.toLocaleDateString('en-CA');
+  const total = ls.filter(n => n.estado === 'activo').reduce((s, n) => s + lavNum(n.cobro_mensual), 0);
+  v.innerHTML = avisoHtml() + (lavNegCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente: <b>cuenta ' + esc(lavNegCreado.cuenta) + '</b> y la clave que escribiste. Pídele que la cambie al entrar.</div>' : '') + `
+    <div class="card"><h2>Nuevo negocio de lavaderos</h2>
+      <p class="mute" style="font-size:13px;margin-top:0">Tu cliente armará sus lavaderos, servicios y precios a su medida. Tú defines cuántos lavaderos puede tener, el precio de cada uno y hasta cuándo vale su acceso. Nunca ves sus lavadas ni su contabilidad.</p>
+      <label>Nombre del negocio</label><input id="ln-nom" placeholder="Ej: Lavado Express">
+      <label>Código de acceso (letras y números, sin espacios)</label><input id="ln-cod" autocapitalize="none" spellcheck="false" placeholder="Ej: express">
+      <label>Nombre del administrador</label><input id="ln-adm"><label>Usuario del administrador</label><input id="ln-usr" autocapitalize="none" spellcheck="false">
+      <label>Clave inicial del administrador</label><input id="ln-pass" type="text" autocomplete="off" placeholder="Mínimo 8 caracteres">
+      <label>Cuántos lavaderos puede tener</label><input id="ln-max" inputmode="numeric" value="1">
+      <label>Precio mensual por lavadero</label><input id="ln-precio" inputmode="numeric" placeholder="Ej: 50.000">
+      <label>Acceso vigente hasta</label><input type="date" id="ln-hasta" value="${por30}">
+      <div id="ln-msg"></div><div style="margin-top:12px"><button id="ln-add">Crear negocio</button></div></div>
+    <div class="card"><h2>Negocios de lavaderos (${ls.length})</h2>${ls.length ? `<p class="mute" style="margin-top:0">Cobro mensual de los activos: <b>${money(total)}</b></p>` : ''}${ls.map(n => `
+      <div class="item ${n.estado === 'activo' ? '' : 'off'}"><div class="row"><div><b>${esc(n.nombre)}</b> <span class="tag">${esc(n.codigo)}</span>${n.estado === 'activo' ? '' : ' <span class="tag bad">suspendido</span>'}${n.vencido ? ' <span class="tag bad">plan vencido</span>' : ''}
+        <div class="mute" style="font-size:12.5px">${n.lavaderos} de ${n.max_lavaderos} lavadero(s) · ${money(n.precio_lavadero)} c/u = ${money(n.cobro_mensual)} al mes · vigente hasta ${fdate(n.vigente_hasta)}</div></div></div>
+        <div class="row" style="margin-top:8px;flex-wrap:wrap"><span><button class="sec sm" data-lpl="${n.id}">Editar plan</button> <button class="sec sm" data-lpg="${n.id}">Registrar pago</button>
+          <button class="sec sm" data-lest="${n.id}" data-v="${n.estado}">${n.estado === 'activo' ? 'Suspender' : 'Reactivar'}</button> <button class="sec sm" data-lnk="${n.id}">Nueva clave del admin</button></span></div>
+        <div id="lpl-${n.id}" hidden style="margin-top:8px"><label>Cuántos lavaderos</label><input id="lpl-m-${n.id}" inputmode="numeric" value="${n.max_lavaderos}"><label>Precio mensual por lavadero</label><input id="lpl-p-${n.id}" inputmode="numeric" value="${milesTxt(n.precio_lavadero)}"><label>Vigente hasta</label><input type="date" id="lpl-h-${n.id}" value="${n.vigente_hasta}"><div id="lpl-e-${n.id}"></div><div style="margin-top:8px"><button class="sm" data-lplgo="${n.id}">Guardar plan</button></div></div>
+        <div id="lpg-${n.id}" hidden style="margin-top:8px"><label>Valor pagado</label><input id="lpg-v-${n.id}" inputmode="numeric" value="${milesTxt(n.cobro_mensual)}"><label>Acceso vigente hasta</label><input type="date" id="lpg-h-${n.id}" value="${lavDentro(n.vencido ? new Date().toLocaleDateString('en-CA') : n.vigente_hasta, 30)}"><label>Nota (opcional)</label><input id="lpg-n-${n.id}"><div id="lpg-e-${n.id}"></div><div style="margin-top:8px"><button class="sm" data-lpggo="${n.id}">Guardar pago</button></div></div>
+        <div class="row" id="lnk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 8)" id="lnk-i-${n.id}"><button class="sm" data-lnkgo="${n.id}">Guardar</button></div>
+        ${n.pagos.length ? `<div class="mute" style="font-size:12px;margin-top:8px">Pagos: ${n.pagos.slice(0, 4).map(p => fdate(p.fecha) + ' ' + money(p.monto)).join(' · ')}</div>` : ''}
+      </div>`).join('') || '<p class="mute">Todavía no has creado negocios de lavaderos.</p>'}</div>`;
+  document.querySelectorAll('input[id^="ln-precio"],input[id^="lpl-p-"],input[id^="lpg-v-"]').forEach(lavMoney);
+  $('#ln-add').onclick = async () => {
+    const nom = $('#ln-nom').value.trim(), cod = limpiarUsuario($('#ln-cod').value), usr = limpiarUsuario($('#ln-usr').value), pass = $('#ln-pass').value, max = entero($('#ln-max').value);
+    lavNegCreado = null;
+    if (!nom || !cod || !usr || pass.length < 8) return alertaEn('ln-msg', 'Completa nombre, código, usuario del administrador y una clave de mínimo 8 caracteres.');
+    if (max < 1) return alertaEn('ln-msg', 'Indica cuántos lavaderos puede tener.');
+    if (!$('#ln-hasta').value) return alertaEn('ln-msg', 'Indica hasta cuándo está vigente su acceso.');
+    $('#ln-add').disabled = true;
+    const { data, error: e } = await sb.rpc('plataforma_crear_lavaderos', { p_nombre: nom, p_codigo: cod, p_admin_nombre: $('#ln-adm').value.trim(), p_admin_usuario: usr, p_admin_clave: pass, p_max: max, p_precio: entero($('#ln-precio').value), p_hasta: $('#ln-hasta').value });
+    if (e) { alertaEn('ln-msg', e.message); $('#ln-add').disabled = false; return; }
+    lavNegCreado = data; setAviso(null); vNegocios();
+  };
+  const tg = (attr, pref) => document.querySelectorAll('[data-' + attr + ']').forEach(b => b.onclick = () => { const x = $('#' + pref + '-' + b.dataset[attr]); x.hidden = !x.hidden; });
+  tg('lpl', 'lpl'); tg('lpg', 'lpg'); tg('lnk', 'lnk');
+  const fin = (e, ok) => { lavNegCreado = null; setAviso(e ? e.message : ok, e ? 'err' : 'ok'); vNegocios(); };
+  document.querySelectorAll('[data-lplgo]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.lplgo;
+    const { error: e } = await sb.rpc('plataforma_lav_plan', { p_negocio: id, p_max: entero($('#lpl-m-' + id).value), p_precio: entero($('#lpl-p-' + id).value), p_hasta: $('#lpl-h-' + id).value || null, p_nota: null });
+    if (e) return alertaEn('lpl-e-' + id, e.message); fin(null, 'Plan actualizado.');
+  });
+  document.querySelectorAll('[data-lpggo]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.lpggo;
+    const { error: e } = await sb.rpc('plataforma_lav_pago', { p_negocio: id, p_monto: entero($('#lpg-v-' + id).value), p_fecha: null, p_hasta: $('#lpg-h-' + id).value || null, p_nota: $('#lpg-n-' + id).value });
+    if (e) return alertaEn('lpg-e-' + id, e.message); fin(null, 'Pago registrado y acceso renovado.');
+  });
+  document.querySelectorAll('[data-lest]').forEach(b => b.onclick = async () => {
+    const susp = b.dataset.v === 'activo';
+    if (susp && !confirm('¿Suspender este negocio? Nadie de ese negocio podrá entrar hasta que lo reactives. No se borra nada.')) return;
+    const { error: e } = await sb.rpc('plataforma_estado', { p_id: b.dataset.lest, p_estado: susp ? 'suspendido' : 'activo' });
+    fin(e, susp ? 'Negocio suspendido.' : 'Negocio reactivado.');
+  });
+  document.querySelectorAll('[data-lnkgo]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.lnkgo, k = $('#lnk-i-' + id).value;
+    if (k.length < 8) { setAviso('La clave debe tener mínimo 8 caracteres.'); return vNegocios(); }
+    const { error: e } = await sb.rpc('plataforma_clave_admin', { p_negocio: id, p_clave: k });
+    fin(e, 'Clave del administrador cambiada.');
+  });
+}
+
+let negocioCreado = null;
+async function vNegociosPrest() {
   const v = $('#vista');
   v.innerHTML = '<p class="mute">Cargando…</p>';
   const { data: ls, error } = await sb.rpc('plataforma_negocios');

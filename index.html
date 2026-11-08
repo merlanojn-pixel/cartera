@@ -2227,6 +2227,19 @@ async function vLavAjustes() {
   lavCatalogoBind(cat);
 }
 
+/* Sugerencias para armar el lavadero más rápido (solo nombres: los precios los pone cada administrador) */
+const LAV_TIPOS_SUG = ['Moto', 'Carro', 'Camioneta', 'Motocarro', 'Camión', 'Bus', 'Tractomula'];
+const LAV_SERV_SUG = {
+  moto: ['Sencilla', 'Con cadena', 'Brillado', 'Completa', 'Lavado de motor', 'Engrasado', 'Polichado'],
+  carro: ['Sencilla', 'Arriba y abajo', 'Con motor', 'Completa', 'Encerado', 'Polichado', 'Tapicería'],
+  camioneta: ['Sencilla', 'Arriba y abajo', 'Con motor', 'Completa', 'Encerado', 'Tapicería'],
+  motocarro: ['Sencilla', 'Completa', 'Con cadena'],
+  otro: ['Sencilla', 'Arriba y abajo', 'Con motor', 'Completa', 'Chasis']
+};
+const lavNorm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
+const lavServDe = nombre => LAV_SERV_SUG[lavNorm(nombre)] || LAV_SERV_SUG.otro;
+const lavChip = (attrs, txt) => `<button type="button" class="sec sm" style="margin:3px 4px 3px 0" ${attrs}>+ ${esc(txt)}</button>`;
+
 function lavCatalogoHtml(cat, sel, puede) {
   const tiposAct = cat.tipos.filter(t => t.activo);
   const filaEd = (pref, id, campos, extra = '') => `<div id="${pref}-ed-${id}" hidden style="margin-top:8px">${campos}<div id="${pref}-m-${id}"></div><div style="margin-top:8px"><button class="sm" data-${pref}-go="${id}">Guardar</button></div></div>`;
@@ -2241,9 +2254,11 @@ function lavCatalogoHtml(cat, sel, puede) {
             <div class="row ${s.activo ? '' : 'off'}" style="margin-top:8px;padding-left:10px;border-left:3px solid var(--line)"><div>${esc(s.nombre)}${s.activo ? '' : ' <span class="tag">desactivado</span>'}</div>
               <div><b>${money(s.precio)}</b> ${puede ? `<button class="sec sm" data-sv="${s.id}">Editar</button>` : ''}</div></div>
             ${puede ? filaEd('sv', s.id, `<label>Nombre del servicio</label><input id="sv-n-${s.id}" value="${esc(s.nombre)}"><label>Precio</label><input id="sv-p-${s.id}" inputmode="numeric" value="${milesTxt(s.precio)}"><p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="sv-a-${s.id}" ${s.activo ? 'checked' : ''}> Activo</label></p>`) : ''}`).join('')}
+          ${puede && t.activo ? (() => { const ya = cat.servicios.filter(s => s.tipo_id === t.id).map(s => lavNorm(s.nombre)); const f = lavServDe(t.nombre).filter(n => !ya.includes(lavNorm(n))); return f.length ? `<div style="margin-top:10px"><div class="mute" style="font-size:12.5px">Toca para elegir y ponle tu precio:</div>${f.map(n => lavChip('data-sug="' + t.id + '" data-n="' + esc(n) + '"', n)).join('')}</div>` : ''; })() : ''}
           ${puede ? `<div class="row" style="margin-top:10px;gap:8px"><input id="ns-n-${t.id}" placeholder="Nuevo servicio (ej: Lavada completa)"><input id="ns-p-${t.id}" inputmode="numeric" placeholder="Precio" style="flex:0 0 32%"><button class="sm" data-ns="${t.id}">+</button></div><div id="ns-m-${t.id}"></div>` : ''}
         </div>`).join('')}
-      ${puede ? `<h3>Nuevo tipo de vehículo</h3><div class="row" style="gap:8px"><input id="nt-n" placeholder="Ej: Tractomula, Bus, Moto"><button id="nt-go" class="sm">Agregar</button></div><div id="nt-m"></div>` : ''}</div>
+      ${puede ? (() => { const ya = cat.tipos.map(t => lavNorm(t.nombre)); const f = LAV_TIPOS_SUG.filter(n => !ya.includes(lavNorm(n))); return f.length ? `<h3>Tipos de vehículo sugeridos</h3><div class="mute" style="font-size:12.5px;margin-bottom:4px">Toca los que atiendes en este lavadero:</div><div>${f.map(n => lavChip('data-sugt="' + esc(n) + '"', n)).join('')}</div><div id="sugt-m"></div>` : ''; })() : ''}
+      ${puede ? `<h3>Otro tipo de vehículo</h3><div class="row" style="gap:8px"><input id="nt-n" placeholder="Ej: Tractomula, Bus, Moto"><button id="nt-go" class="sm">Agregar</button></div><div id="nt-m"></div>` : ''}</div>
     <div class="card"><h2>Lavadores de «${esc(sel.nombre)}»</h2>
       ${cat.lavadores.map(w => `<div class="item ${w.activo ? '' : 'off'}"><div class="row"><div><b>${esc(w.nombre)}</b>${w.telefono ? ' <span class="mute">' + esc(w.telefono) + '</span>' : ''}${w.activo ? '' : ' <span class="tag">desactivado</span>'}</div>${puede ? `<button class="sec sm" data-lw="${w.id}">Editar</button>` : ''}</div>
         ${puede ? filaEd('lw', w.id, `<label>Nombre</label><input id="lw-n-${w.id}" value="${esc(w.nombre)}"><label>Teléfono (opcional)</label><input id="lw-t-${w.id}" inputmode="tel" value="${esc(w.telefono || '')}"><p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="lw-a-${w.id}" ${w.activo ? 'checked' : ''}> Activo</label></p>`) : ''}</div>`).join('') || '<p class="mute">Todavía no hay lavadores.</p>'}
@@ -2257,6 +2272,15 @@ function lavCatalogoBind(cat) {
   tog('tp', 'tp'); tog('sv', 'sv'); tog('lw', 'lw');
   document.querySelectorAll('[id^="sv-p-"],[id^="ns-p-"]').forEach(lavMoney);
   if ($('#cx-ej')) $('#cx-ej').onclick = async () => { const { error } = await sb.rpc('lav_sembrar_ejemplo', { p_lav: L }); hecho(error ? error.message : 'Lista de ejemplo cargada. Edita los nombres y precios a tu gusto.', !error); };
+  document.querySelectorAll('[data-sugt]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await sb.rpc('lav_guardar_tipo', { p_lav: L, p_id: null, p_nombre: b.dataset.sugt, p_activo: true });
+    if (error) { b.disabled = false; return alertaEn('sugt-m', error.message); }
+    hecho(b.dataset.sugt + ' agregado. Ahora elige sus servicios y ponles precio.');
+  });
+  document.querySelectorAll('[data-sug]').forEach(b => b.onclick = () => {
+    const id = b.dataset.sug, n = $('#ns-n-' + id); n.value = b.dataset.n; $('#ns-p-' + id).focus();
+  });
   if ($('#nt-go')) $('#nt-go').onclick = async () => {
     if (!$('#nt-n').value.trim()) return alertaEn('nt-m', 'Escribe el nombre del tipo de vehículo.');
     const { error } = await sb.rpc('lav_guardar_tipo', { p_lav: L, p_id: null, p_nombre: $('#nt-n').value, p_activo: true });

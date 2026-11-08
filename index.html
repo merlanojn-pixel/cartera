@@ -214,12 +214,147 @@ async function init() {
   if (data.session) await cargarYo(); else vistaLogin();
 }
 
+/* ======================= SEGURIDAD: claves temporales, cambio obligatorio y segundo factor ======================= */
+function genClave() {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  for (;;) {
+    const b = new Uint32Array(12); crypto.getRandomValues(b);
+    const c = Array.from(b, x => A[x % A.length]).join('');
+    if (/\d/.test(c) && /[a-z]/.test(c) && /[A-Z]/.test(c)) return c;
+  }
+}
+/* Muestra la clave temporal una sola vez, con botones para copiar y enviar por WhatsApp */
+function mostrarClave(cuenta, clave) {
+  const ant = document.getElementById('clave-ov'); if (ant) ant.remove();
+  const texto = `Hola, este es tu acceso a ${NOMBRE_PLATAFORMA}:\nCuenta: ${cuenta}\nClave temporal: ${clave}\nAl entrar por primera vez te pedirá crear tu propia clave.`;
+  const ov = document.createElement('div'); ov.id = 'clave-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = `<div class="card" style="max-width:420px;width:100%;margin:0"><h2 style="margin-top:0">Entrega esta clave</h2>
+    <p class="mute" style="margin:0 0 6px">Cuenta</p><p style="margin:0 0 10px;font-size:17px"><b>${esc(cuenta)}</b></p>
+    <p class="mute" style="margin:0 0 6px">Clave temporal</p><p id="clave-txt" style="margin:0 0 10px;font-size:22px;font-family:monospace;letter-spacing:1px;word-break:break-all"><b>${esc(clave)}</b></p>
+    <p class="mute" style="font-size:13px;margin:0 0 12px">Se muestra <b>una sola vez</b>: no queda guardada en ningún lado. Es temporal: al entrar por primera vez, la persona tendrá que crear la suya.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="clave-cp" style="flex:1">Copiar</button><button id="clave-wa" class="sec" style="flex:1">WhatsApp</button></div>
+    <div style="margin-top:8px"><button id="clave-x" class="sec" style="width:100%">Ya la entregué, cerrar</button></div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('clave-cp').onclick = async () => {
+    try { await navigator.clipboard.writeText(texto); } catch (e) {
+      const t = document.createElement('textarea'); t.value = texto; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e2) {} t.remove();
+    }
+    document.getElementById('clave-cp').textContent = 'Copiado';
+  };
+  document.getElementById('clave-wa').onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  document.getElementById('clave-x').onclick = () => ov.remove();
+}
+
+function pantallaSegura(titulo, cuerpo) {
+  marcaPestana(true);
+  $('#app').innerHTML = `<div class="login"><h1 class="marca" style="text-align:center;color:var(--brand);margin-bottom:4px">${esc(NOMBRE_PLATAFORMA)}</h1>
+    <div class="card" style="margin-top:14px"><h2 style="margin-top:0">${titulo}</h2>${avisoHtml()}${cuerpo}
+    <p style="margin:14px 0 0;text-align:center"><button class="sec sm" id="sg-salir">Salir</button></p></div></div>`;
+  $('#sg-salir').onclick = async () => { await sb.auth.signOut(); me = null; setAviso(null); vistaLogin(); };
+}
+
+/* Clave temporal: la persona debe crear la suya antes de usar nada */
+function vCambioObligatorio() {
+  pantallaSegura('Crea tu propia clave', `
+    <p class="mute" style="margin-top:0">Entraste con una clave temporal. Para seguir, crea una clave que solo tú conozcas.</p>
+    <label>Clave temporal (la que te dieron)</label><input id="co-0" type="password" autocomplete="current-password">
+    <label>Clave nueva</label><input id="co-1" type="password" autocomplete="new-password">
+    <label>Repite la clave nueva</label><input id="co-2" type="password" autocomplete="new-password">
+    <p class="mute" style="font-size:12.5px;margin:6px 0 0">Mínimo ${me && me.es_plataforma ? 12 : 8} caracteres, con letras y números.</p>
+    <div id="co-msg"></div><div style="margin-top:12px"><button id="co-go" style="width:100%">Guardar mi clave</button></div>`);
+  $('#co-go').onclick = async () => {
+    const a = $('#co-0').value, b = $('#co-1').value, c = $('#co-2').value;
+    if (!a || !b) return alertaEn('co-msg', 'Escribe la clave temporal y la clave nueva.');
+    if (b !== c) return alertaEn('co-msg', 'Las dos claves nuevas no son iguales.');
+    $('#co-go').disabled = true;
+    const { data, error } = await sb.rpc('cambiar_mi_clave', { p_actual: a, p_nueva: b });
+    if (error || !data || !data.ok) { alertaEn('co-msg', (error && error.message) || (data && data.error) || 'No se pudo cambiar la clave.'); $('#co-go').disabled = false; return; }
+    setAviso('Listo, ya tienes tu propia clave.', 'ok'); cargarYo();
+  };
+}
+
+/* Segundo factor (código de 6 dígitos) obligatorio para la cuenta de la plataforma */
+async function mfaPaso() {
+  const { data: f, error: e1 } = await sb.auth.mfa.listFactors();
+  if (e1) { pantallaSegura('No se pudo verificar tu seguridad', `<div class="msg err">${esc(e1.message)}</div><p class="mute">Revisa en Supabase que la autenticación en dos pasos (MFA) esté activa en Authentication.</p>`); return false; }
+  const totp = (f.totp || []).find(x => x.status === 'verified');
+  const { data: a } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (totp && a && a.currentLevel === 'aal2') return true;
+  if (totp) { vMfaCodigo(totp.id); return false; }
+  await vMfaActivar(f); return false;
+}
+function vMfaCodigo(factorId) {
+  pantallaSegura('Código de seguridad', `
+    <p class="mute" style="margin-top:0">Abre tu app autenticadora y escribe el código de 6 dígitos de ${esc(NOMBRE_PLATAFORMA)}.</p>
+    <label>Código</label><input id="mf-c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="font-size:22px;letter-spacing:4px;text-align:center">
+    <div id="mf-msg"></div><div style="margin-top:12px"><button id="mf-go" style="width:100%">Verificar</button></div>`);
+  $('#mf-c').focus();
+  const go = async () => {
+    const code = $('#mf-c').value.replace(/\D/g, '');
+    if (code.length !== 6) return alertaEn('mf-msg', 'Escribe los 6 dígitos.');
+    $('#mf-go').disabled = true;
+    const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) { alertaEn('mf-msg', 'Código incorrecto o vencido. Intenta con el código nuevo.'); $('#mf-go').disabled = false; return; }
+    setAviso(null); cargarYo();
+  };
+  $('#mf-go').onclick = go; $('#mf-c').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+async function vMfaActivar(f) {
+  for (const x of (f.all || []).filter(x => x.status !== 'verified')) { try { await sb.auth.mfa.unenroll({ factorId: x.id }); } catch (e) {} }
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Capitalia ' + Date.now() });
+  if (error) { pantallaSegura('No se pudo activar el código', `<div class="msg err">${esc(error.message)}</div><p class="mute">Revisa en Supabase (Authentication) que la autenticación en dos pasos (MFA / TOTP) esté activa.</p>`); return; }
+  pantallaSegura('Activa tu código de seguridad', `
+    <p class="mute" style="margin-top:0">Tu cuenta de plataforma debe tener un segundo paso. Haz esto una sola vez:</p>
+    <ol class="mute" style="padding-left:18px;margin:0 0 10px"><li>Instala una app autenticadora (Google Authenticator, Microsoft Authenticator o Authy).</li><li>Escanea este código QR, o escribe la clave de abajo en la app.</li><li>Escribe aquí el código de 6 dígitos que te muestra.</li></ol>
+    <div style="text-align:center;background:#fff;border-radius:12px;padding:10px"><img alt="QR" src="${esc(data.totp.qr_code)}" style="width:200px;height:200px"></div>
+    <p class="mute" style="font-size:12.5px;margin:8px 0 0">Clave para escribir a mano (guárdala en un lugar seguro: con ella puedes volver a configurar tu autenticador si pierdes el celular):</p>
+    <p style="font-family:monospace;word-break:break-all;margin:4px 0 8px"><b>${esc(data.totp.secret)}</b></p>
+    <label>Código de 6 dígitos</label><input id="mf-c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="font-size:22px;letter-spacing:4px;text-align:center">
+    <div id="mf-msg"></div><div style="margin-top:12px"><button id="mf-go" style="width:100%">Activar</button></div>`);
+  const go = async () => {
+    const code = $('#mf-c').value.replace(/\D/g, '');
+    if (code.length !== 6) return alertaEn('mf-msg', 'Escribe los 6 dígitos.');
+    $('#mf-go').disabled = true;
+    const { error: e2 } = await sb.auth.mfa.challengeAndVerify({ factorId: data.id, code });
+    if (e2) { alertaEn('mf-msg', 'Código incorrecto. Revisa que la hora de tu celular sea automática e intenta con el código nuevo.'); $('#mf-go').disabled = false; return; }
+    setAviso('Listo: tu cuenta de plataforma ya tiene segundo paso.', 'ok'); cargarYo();
+  };
+  $('#mf-go').onclick = go; $('#mf-c').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+
+function vMiClave() {
+  const v = $('#vista'), min = me.es_plataforma ? 12 : 8;
+  v.innerHTML = `${avisoHtml()}<div class="card"><h2>Mi cuenta</h2>
+    <p class="mute">Cuenta: <b>${esc(me.es_plataforma ? (me.usuario || '') + '@panel' : cuentaDe(me))}</b></p>
+    <label>Clave actual</label><input id="k-0" type="password" autocomplete="current-password">
+    <label>Clave nueva</label><input id="k-1" type="password" autocomplete="new-password">
+    <label>Repite la clave nueva</label><input id="k-2" type="password" autocomplete="new-password">
+    <p class="mute" style="font-size:12.5px;margin:6px 0 0">Mínimo ${min} caracteres, con letras y números.${me.es_plataforma ? ' Usa una clave larga que no uses en ningún otro sitio.' : ''}</p>
+    <div id="k-msg"></div>
+    <div style="margin-top:12px"><button id="k-go">Cambiar clave</button></div></div>
+    ${me.es_plataforma ? '<div class="card"><h2>Código de seguridad</h2><p class="mute" style="margin:0">Tu cuenta de plataforma está protegida con un código de 6 dígitos de tu app autenticadora. La sesión se cierra sola tras 30 minutos sin actividad.</p></div>' : ''}`;
+  $('#k-go').onclick = async () => {
+    const z = $('#k-0').value, a = $('#k-1').value, b = $('#k-2').value;
+    if (!z) { alertaEn('k-msg', 'Escribe tu clave actual.'); return; }
+    if (a.length < min) { alertaEn('k-msg', 'La clave nueva debe tener mínimo ' + min + ' caracteres.'); return; }
+    if (a !== b) { alertaEn('k-msg', 'Las dos claves nuevas no son iguales.'); return; }
+    $('#k-go').disabled = true;
+    const { data, error } = await sb.rpc('cambiar_mi_clave', { p_actual: z, p_nueva: a });
+    if (error || !data || !data.ok) { alertaEn('k-msg', (error && (/cambiar_mi_clave/.test(error.message) ? 'Falta correr 20_claves.sql en Supabase.' : error.message)) || (data && data.error) || 'No se pudo cambiar la clave.'); $('#k-go').disabled = false; return; }
+    setAviso('Clave cambiada.', 'ok'); vMiClave();
+  };
+}
+
 async function cargarYo() {
   const { data: u } = await sb.auth.getUser();
   if (!u.user) return vistaLogin();
   const { data: p, error } = await sb.from('perfiles').select('*').eq('id', u.user.id).single();
   if (error || !p) { await sb.auth.signOut(); setAviso('No se encontró tu perfil.'); return vistaLogin(); }
   me = p; perms = new Set();
+  if (p.es_plataforma && !(await mfaPaso())) return;
+  { const { data: tmp } = await sb.rpc('mi_clave_temporal'); if (tmp === true) return vCambioObligatorio(); }
+  if (p.es_plataforma) lavIdleArm();
   alertasCache = null; negocio = { nombre: NOMBRE_NEGOCIO };
   if (!p.es_plataforma) {
     const { data: nx } = await sb.from('negocios').select('*').maybeSingle();
@@ -534,7 +669,7 @@ async function vUsuarios() {
       <p class="mute" style="font-size:13px;margin-top:0">Solo tú puedes crear usuarios. Cada usuario entra con <b>usuario@${esc(negocio.codigo)}</b> y su clave.</p>
       <label>Nombre</label><input id="u-nom">
       <label>Usuario</label><input id="u-mail" autocapitalize="none" spellcheck="false" placeholder="Ej: maria, cobrador1">
-      <label>Clave inicial</label><input id="u-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
+      <label>Clave temporal (puedes dejar esta)</label><input id="u-pass" type="text" autocomplete="off" value="${genClave()}">
       <label>Rol</label><select id="u-rol"><option value="">Elige el rol</option>${(roles || []).map(r => '<option value="' + r.id + '">' + esc(r.nombre) + '</option>').join('')}</select>
       ${(roles || []).length ? '' : '<div class="msg err" style="margin-top:8px">Tu negocio todavía no tiene los roles Cobrador y Supervisor. Corre el archivo 12_roles.sql en Supabase y recarga.</div>'}
       <p class="mute" style="font-size:12.5px;margin:8px 0 0"><b>Cobrador:</b> ve clientes y préstamos y registra pagos.<br><b>Supervisor:</b> además crea clientes y préstamos, edita clientes y ve estadísticas.<br>Ninguno puede eliminar, anular ni refinanciar: eso es solo tuyo.</p>
@@ -545,7 +680,7 @@ async function vUsuarios() {
         <div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">${esc(cuentaDe(u))}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : (nomRol.get(u.role_id) ? '<span class="tag">' + esc(nomRol.get(u.role_id)) + '</span>' : '<span class="tag bad">sin rol</span>')}${u.activo ? '' : '<span class="tag">inactivo</span>'}${bloqueados.has(u.id) ? `<span class="tag bad">bloqueado hasta ${hora(bloqueados.get(u.id))}</span>` : ''}</div></div>
         ${u.es_admin ? '' : `<div class="row" style="margin-top:8px;flex-wrap:wrap"><select data-rol="${u.id}">${opciones(u.role_id)}</select>
           <span><button class="sec sm" data-clave="${u.id}">Cambiar clave</button> <button class="sec sm" data-uact="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>${bloqueados.has(u.id) ? ` <button class="sm" data-desb="${u.id}">Desbloquear</button>` : ''}</span></div>
-          <div class="row" id="ck-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 6)" id="ck-i-${u.id}"><button class="sm" data-ckgo="${u.id}">Guardar</button></div>`}
+          <div class="row" id="ck-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" value="${genClave()}" id="ck-i-${u.id}"><button class="sm" data-ckgo="${u.id}">Guardar</button></div>`}
       </div>`).join('')}</div>`;
   $('#u-add').onclick = async () => {
     const nombre = $('#u-nom').value.trim(), usuario = limpiarUsuario($('#u-mail').value), password = $('#u-pass').value, rol = $('#u-rol').value;
@@ -554,7 +689,8 @@ async function vUsuarios() {
     $('#u-add').disabled = true;
     const { error: e } = await sb.rpc('admin_crear_usuario', { p_nombre: nombre, p_usuario: usuario, p_clave: password, p_rol: rol });
     if (e) { alertaEn('u-msg', e.message); $('#u-add').disabled = false; return; }
-    setAviso(`Usuario creado. Debe entrar con ${usuario}@${negocio.codigo} y la clave que le diste.`, 'ok'); vUsuarios();
+    mostrarClave(usuario + '@' + negocio.codigo, password);
+    setAviso(`Usuario creado. Debe entrar con ${usuario}@${negocio.codigo} y la clave temporal; al entrar tendrá que crear la suya.`, 'ok'); vUsuarios();
   };
   document.querySelectorAll('[data-rol]').forEach(s => s.onchange = async () => {
     const { error } = await sb.from('perfiles').update({ role_id: s.value || null }).eq('id', s.dataset.rol);
@@ -569,6 +705,7 @@ async function vUsuarios() {
     const id = b.dataset.ckgo, clave = $('#ck-i-' + id).value;
     if (clave.length < 6) { setAviso('La clave debe tener mínimo 6 caracteres.'); return vUsuarios(); }
     const { error } = await sb.rpc('admin_cambiar_clave', { p_id: id, p_clave: clave });
+    if (!error) mostrarClave(cuentaDe(us.find(x => x.id === id)), clave);
     setAviso(error ? error.message : 'Clave cambiada. Entrégasela al usuario.', error ? 'err' : 'ok'); vUsuarios();
   });
   document.querySelectorAll('[data-desb]').forEach(b => b.onclick = async () => {
@@ -1833,11 +1970,11 @@ let lavIdleT = null;
 function lavIdleArm() {
   if (lavIdleT) clearTimeout(lavIdleT);
   lavIdleT = setTimeout(async () => {
-    if (!me || negocio.tipo !== 'lavaderos') return;
+    if (!me || (negocio.tipo !== 'lavaderos' && !me.es_plataforma)) return;
     await sb.auth.signOut(); me = null; setAviso('Tu sesión se cerró por 30 minutos sin actividad. Entra de nuevo.'); vistaLogin();
   }, 30 * 60 * 1000);
 }
-['click', 'keydown', 'touchstart', 'scroll'].forEach(ev => document.addEventListener(ev, () => { if (me && negocio.tipo === 'lavaderos') lavIdleArm(); }, { passive: true }));
+['click', 'keydown', 'touchstart', 'scroll'].forEach(ev => document.addEventListener(ev, () => { if (me && (negocio.tipo === 'lavaderos' || me.es_plataforma)) lavIdleArm(); }, { passive: true }));
 
 const lavDentro = (f, d) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
 function lavRango(tipo, hoyS) {
@@ -2166,14 +2303,14 @@ async function vLavEquipo() {
       <p class="mute" style="font-size:13px;margin-top:0">El supervisor registra lavadas, gastos y el cierre del día en los lavaderos que le asignes. No ve precios, reportes ni lo que ganan los lavadores. Entra con <b>usuario@${esc(negocio.codigo)}</b> y su clave.</p>
       ${rol ? '' : '<div class="msg err">No se encontró el rol Supervisor en tu negocio. Avisa a la plataforma.</div>'}
       <label>Nombre</label><input id="eq-nom"><label>Usuario</label><input id="eq-usr" autocapitalize="none" spellcheck="false" placeholder="Ej: sara, caja1">
-      <label>Clave inicial</label><input id="eq-pass" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
+      <label>Clave temporal (puedes dejar esta)</label><input id="eq-pass" type="text" autocomplete="off" value="${genClave()}">
       <label>Lavaderos donde trabaja</label>${checks('eq-l', [])}
       <div id="eq-msg"></div><div style="margin-top:12px"><button id="eq-add" ${rol ? '' : 'disabled'}>Crear supervisor</button></div></div>
     <div class="card"><h2>Tu equipo</h2>${ru.data.map(u => `
       <div class="item ${u.activo ? '' : 'off'}"><div class="row"><div><b>${esc(u.nombre)}</b> <span class="mute">${esc(cuentaDe(u))}</span> ${u.es_admin ? '<span class="tag">administrador</span>' : '<span class="tag">supervisor</span>'}${u.activo ? '' : ' <span class="tag">desactivado</span>'}${bloq.has(u.id) ? ' <span class="tag bad">bloqueado</span>' : ''}</div></div>
         ${u.es_admin ? '' : `<div style="margin-top:6px"><div class="mute" style="font-size:12.5px">Lavaderos asignados:</div>${checks('as-' + u.id, asig[u.id] || [])}<div id="as-m-${u.id}"></div>
           <div class="row" style="flex-wrap:wrap;margin-top:6px"><button class="sm" data-asg="${u.id}">Guardar lavaderos</button><span><button class="sec sm" data-clv="${u.id}">Cambiar clave</button> <button class="sec sm" data-uac="${u.id}" data-v="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>${bloq.has(u.id) ? ` <button class="sm" data-dsb="${u.id}">Desbloquear</button>` : ''}</span></div>
-          <div class="row" id="cl-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 6)" id="cl-i-${u.id}"><button class="sm" data-clgo="${u.id}">Guardar</button></div>`}</div>`).join('')}</div>`;
+          <div class="row" id="cl-${u.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" value="${genClave()}" id="cl-i-${u.id}"><button class="sm" data-clgo="${u.id}">Guardar</button></div>`}</div>`).join('')}</div>`;
   $('#eq-add').onclick = async () => {
     const nombre = $('#eq-nom').value.trim(), usuario = limpiarUsuario($('#eq-usr').value), clave = $('#eq-pass').value, lavs = [...document.querySelectorAll('.eq-l:checked')].map(x => x.value);
     if (/[^a-z0-9._-]/.test(usuario) || usuario.length < 3) return alertaEn('eq-msg', 'El usuario debe tener mínimo 3 letras o números, sin espacios, tildes ni @.');
@@ -2182,8 +2319,9 @@ async function vLavEquipo() {
     $('#eq-add').disabled = true;
     const { data: id, error } = await sb.rpc('admin_crear_usuario', { p_nombre: nombre, p_usuario: usuario, p_clave: clave, p_rol: rol.id });
     if (error) { alertaEn('eq-msg', error.message); $('#eq-add').disabled = false; return; }
+    mostrarClave(usuario + '@' + negocio.codigo, clave);
     const r2 = await sb.rpc('lav_asignar', { p_perfil: id, p_lavaderos: lavs });
-    setAviso(r2.error ? 'El usuario se creó pero no se pudo asignar el lavadero: ' + r2.error.message : `Supervisor creado. Entra con ${usuario}@${negocio.codigo} y la clave que le diste.`, r2.error ? 'err' : 'ok'); vLavEquipo();
+    setAviso(r2.error ? 'El usuario se creó pero no se pudo asignar el lavadero: ' + r2.error.message : `Supervisor creado. Entra con ${usuario}@${negocio.codigo} y la clave temporal; al entrar tendrá que crear la suya.`, r2.error ? 'err' : 'ok'); vLavEquipo();
   };
   document.querySelectorAll('[data-asg]').forEach(b => b.onclick = async () => {
     const id = b.dataset.asg, lavs = [...document.querySelectorAll('.as-' + id + ':checked')].map(x => x.value);
@@ -2195,6 +2333,7 @@ async function vLavEquipo() {
     const id = b.dataset.clgo, k = $('#cl-i-' + id).value;
     if (k.length < 6) return alertaEn('as-m-' + id, 'La clave debe tener mínimo 6 caracteres.');
     const { error } = await sb.rpc('admin_cambiar_clave', { p_id: id, p_clave: k });
+    if (!error) mostrarClave(cuentaDe(ru.data.find(x => x.id === id)), k);
     setAviso(error ? error.message : 'Clave cambiada. Entrégasela al supervisor.', error ? 'err' : 'ok'); vLavEquipo();
   });
   document.querySelectorAll('[data-uac]').forEach(b => b.onclick = async () => {
@@ -2220,13 +2359,13 @@ async function vLavNegocios() {
   if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + (/plataforma_lav_resumen/.test(error.message) ? ' Falta correr 19_lavaderos.sql en Supabase.' : '') + '</div>'; return; }
   const ini = new Date(); ini.setDate(ini.getDate() + 30); const por30 = ini.toLocaleDateString('en-CA');
   const total = ls.filter(n => n.estado === 'activo').reduce((s, n) => s + lavNum(n.cobro_mensual), 0);
-  v.innerHTML = avisoHtml() + (lavNegCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente: <b>cuenta ' + esc(lavNegCreado.cuenta) + '</b> y la clave que escribiste. Pídele que la cambie al entrar.</div>' : '') + `
+  v.innerHTML = avisoHtml() + (lavNegCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente la cuenta <b>' + esc(lavNegCreado.cuenta) + '</b> y la clave temporal que se mostró. Al entrar por primera vez le pedirá crear la suya.</div>' : '') + `
     <div class="card"><h2>Nuevo negocio de lavaderos</h2>
       <p class="mute" style="font-size:13px;margin-top:0">Tu cliente armará sus lavaderos, servicios y precios a su medida. Tú defines cuántos lavaderos puede tener, el precio de cada uno y hasta cuándo vale su acceso. Nunca ves sus lavadas ni su contabilidad.</p>
       <label>Nombre del negocio</label><input id="ln-nom" placeholder="Ej: Lavado Express">
       <label>Código de acceso (letras y números, sin espacios)</label><input id="ln-cod" autocapitalize="none" spellcheck="false" placeholder="Ej: express">
       <label>Nombre del administrador</label><input id="ln-adm"><label>Usuario del administrador</label><input id="ln-usr" autocapitalize="none" spellcheck="false">
-      <label>Clave inicial del administrador</label><input id="ln-pass" type="text" autocomplete="off" placeholder="Mínimo 8 caracteres">
+      <label>Clave temporal del administrador (puedes dejar esta)</label><input id="ln-pass" type="text" autocomplete="off" value="${genClave()}">
       <label>Cuántos lavaderos puede tener</label><input id="ln-max" inputmode="numeric" value="1">
       <label>Precio mensual por lavadero</label><input id="ln-precio" inputmode="numeric" placeholder="Ej: 50.000">
       <label>Acceso vigente hasta</label><input type="date" id="ln-hasta" value="${por30}">
@@ -2238,7 +2377,7 @@ async function vLavNegocios() {
           <button class="sec sm" data-lest="${n.id}" data-v="${n.estado}">${n.estado === 'activo' ? 'Suspender' : 'Reactivar'}</button> <button class="sec sm" data-lnk="${n.id}">Nueva clave del admin</button></span></div>
         <div id="lpl-${n.id}" hidden style="margin-top:8px"><label>Cuántos lavaderos</label><input id="lpl-m-${n.id}" inputmode="numeric" value="${n.max_lavaderos}"><label>Precio mensual por lavadero</label><input id="lpl-p-${n.id}" inputmode="numeric" value="${milesTxt(n.precio_lavadero)}"><label>Vigente hasta</label><input type="date" id="lpl-h-${n.id}" value="${n.vigente_hasta}"><div id="lpl-e-${n.id}"></div><div style="margin-top:8px"><button class="sm" data-lplgo="${n.id}">Guardar plan</button></div></div>
         <div id="lpg-${n.id}" hidden style="margin-top:8px"><label>Valor pagado</label><input id="lpg-v-${n.id}" inputmode="numeric" value="${milesTxt(n.cobro_mensual)}"><label>Acceso vigente hasta</label><input type="date" id="lpg-h-${n.id}" value="${lavDentro(n.vencido ? new Date().toLocaleDateString('en-CA') : n.vigente_hasta, 30)}"><label>Nota (opcional)</label><input id="lpg-n-${n.id}"><div id="lpg-e-${n.id}"></div><div style="margin-top:8px"><button class="sm" data-lpggo="${n.id}">Guardar pago</button></div></div>
-        <div class="row" id="lnk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 8)" id="lnk-i-${n.id}"><button class="sm" data-lnkgo="${n.id}">Guardar</button></div>
+        <div class="row" id="lnk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" value="${genClave()}" id="lnk-i-${n.id}"><button class="sm" data-lnkgo="${n.id}">Guardar</button></div>
         ${n.pagos.length ? `<div class="mute" style="font-size:12px;margin-top:8px">Pagos: ${n.pagos.slice(0, 4).map(p => fdate(p.fecha) + ' ' + money(p.monto)).join(' · ')}</div>` : ''}
       </div>`).join('') || '<p class="mute">Todavía no has creado negocios de lavaderos.</p>'}</div>`;
   document.querySelectorAll('input[id^="ln-precio"],input[id^="lpl-p-"],input[id^="lpg-v-"]').forEach(lavMoney);
@@ -2251,7 +2390,7 @@ async function vLavNegocios() {
     $('#ln-add').disabled = true;
     const { data, error: e } = await sb.rpc('plataforma_crear_lavaderos', { p_nombre: nom, p_codigo: cod, p_admin_nombre: $('#ln-adm').value.trim(), p_admin_usuario: usr, p_admin_clave: pass, p_max: max, p_precio: entero($('#ln-precio').value), p_hasta: $('#ln-hasta').value });
     if (e) { alertaEn('ln-msg', e.message); $('#ln-add').disabled = false; return; }
-    lavNegCreado = data; setAviso(null); vNegocios();
+    lavNegCreado = data; setAviso(null); mostrarClave(data.cuenta, pass); vNegocios();
   };
   const tg = (attr, pref) => document.querySelectorAll('[data-' + attr + ']').forEach(b => b.onclick = () => { const x = $('#' + pref + '-' + b.dataset[attr]); x.hidden = !x.hidden; });
   tg('lpl', 'lpl'); tg('lpg', 'lpg'); tg('lnk', 'lnk');
@@ -2276,6 +2415,7 @@ async function vLavNegocios() {
     const id = b.dataset.lnkgo, k = $('#lnk-i-' + id).value;
     if (k.length < 8) { setAviso('La clave debe tener mínimo 8 caracteres.'); return vNegocios(); }
     const { error: e } = await sb.rpc('plataforma_clave_admin', { p_negocio: id, p_clave: k });
+    if (!e) { const n0 = ls.find(x => x.id === id); mostrarClave((n0.admin_usuario || 'admin') + '@' + n0.codigo, k); }
     fin(e, 'Clave del administrador cambiada.');
   });
 }
@@ -2287,14 +2427,14 @@ async function vNegociosPrest() {
   const { data: ls, error } = await sb.rpc('plataforma_negocios');
   if (error) { v.innerHTML = '<div class="msg err">' + esc(error.message) + '</div>'; return; }
   const f = d => new Date(d).toLocaleDateString('es-CO');
-  v.innerHTML = avisoHtml() + (negocioCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente: <b>cuenta ' + esc(negocioCreado.cuenta) + '</b> y la clave que escribiste. Pídele que la cambie al entrar.</div>' : '') + `
+  v.innerHTML = avisoHtml() + (negocioCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente la cuenta <b>' + esc(negocioCreado.cuenta) + '</b> y la clave temporal que se mostró. Al entrar por primera vez le pedirá crear la suya.</div>' : '') + `
     <div class="card"><h2>Nuevo negocio</h2>
       <p class="mute" style="font-size:13px;margin-top:0">Cada negocio tiene su propio espacio, aislado de los demás. Tú solo ves los datos del negocio (nombre, estado, usuarios), nunca sus clientes ni sus préstamos.</p>
       <label>Nombre del negocio</label><input id="n-nom" placeholder="Ej: Inversiones García">
       <label>Código de acceso (letras y números, sin espacios)</label><input id="n-cod" autocapitalize="none" spellcheck="false" placeholder="Ej: garcia">
       <label>Nombre del administrador</label><input id="n-adm">
       <label>Usuario del administrador</label><input id="n-usr" autocapitalize="none" spellcheck="false" placeholder="Ej: lgarcia">
-      <label>Clave inicial del administrador</label><input id="n-pass" type="text" autocomplete="off" placeholder="Mínimo 8 caracteres">
+      <label>Clave temporal del administrador (puedes dejar esta)</label><input id="n-pass" type="text" autocomplete="off" value="${genClave()}">
       <div style="margin-top:12px"><button id="n-add">Crear negocio</button></div></div>
     <div class="card"><h2>Negocios (${ls.length})</h2>${ls.map(n => `
       <div class="item ${n.estado === 'activo' ? '' : 'off'}">
@@ -2303,7 +2443,7 @@ async function vNegociosPrest() {
         <div class="row" style="margin-top:8px;flex-wrap:wrap"><span>
           <button class="sec sm" data-est="${n.id}" data-v="${n.estado}">${n.estado === 'activo' ? 'Suspender' : 'Reactivar'}</button>
           <button class="sec sm" data-nk="${n.id}">Nueva clave del admin</button></span></div>
-        <div class="row" id="nk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" placeholder="Clave nueva (mínimo 8)" id="nk-i-${n.id}"><button class="sm" data-nkgo="${n.id}">Guardar</button></div>
+        <div class="row" id="nk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" value="${genClave()}" id="nk-i-${n.id}"><button class="sm" data-nkgo="${n.id}">Guardar</button></div>
       </div>`).join('')}</div>`;
   $('#n-add').onclick = async () => {
     const nom = $('#n-nom').value.trim(), cod = limpiarUsuario($('#n-cod').value), adm = $('#n-adm').value.trim(), usr = limpiarUsuario($('#n-usr').value), pass = $('#n-pass').value;
@@ -2311,7 +2451,7 @@ async function vNegociosPrest() {
     if (!nom || !cod || !usr || pass.length < 8) { setAviso('Completa nombre, código, usuario del administrador y una clave de mínimo 8 caracteres.'); return vNegocios(); }
     $('#n-add').disabled = true;
     const { data, error: e } = await sb.rpc('plataforma_crear_negocio', { p_nombre: nom, p_codigo: cod, p_admin_nombre: adm, p_admin_usuario: usr, p_admin_clave: pass });
-    if (e) setAviso(e.message); else { setAviso(null); negocioCreado = data; }
+    if (e) setAviso(e.message); else { setAviso(null); negocioCreado = data; mostrarClave(data.cuenta, pass); }
     vNegocios();
   };
   document.querySelectorAll('[data-est]').forEach(b => b.onclick = async () => {
@@ -2325,28 +2465,10 @@ async function vNegociosPrest() {
     const id = b.dataset.nkgo, c = $('#nk-i-' + id).value;
     if (c.length < 8) { setAviso('La clave debe tener mínimo 8 caracteres.'); return vNegocios(); }
     const { error: e } = await sb.rpc('plataforma_clave_admin', { p_negocio: id, p_clave: c });
+    if (!e) { const n0 = ls.find(x => x.id === id); mostrarClave((n0.admin_usuario || 'admin') + '@' + n0.codigo, c); }
     negocioCreado = null; setAviso(e ? e.message : 'Clave del administrador cambiada.', e ? 'err' : 'ok'); vNegocios();
   });
 }
-
-function vMiClave() {
-  const v = $('#vista');
-  v.innerHTML = `${avisoHtml()}<div class="card"><h2>Mi cuenta</h2>
-    <p class="mute">Cuenta: <b>${esc(me.es_plataforma ? (me.usuario || '') + '@panel' : cuentaDe(me))}</b></p>
-    <label>Clave nueva</label><input id="k-1" type="password" autocomplete="new-password">
-    <label>Repite la clave nueva</label><input id="k-2" type="password" autocomplete="new-password">
-    <div id="k-msg"></div>
-    <div style="margin-top:12px"><button id="k-go">Cambiar clave</button></div></div>`;
-  $('#k-go').onclick = async () => {
-    const a = $('#k-1').value, b = $('#k-2').value;
-    if (a.length < 6) { alertaEn('k-msg', 'La clave debe tener mínimo 6 caracteres.'); return; }
-    if (a !== b) { alertaEn('k-msg', 'Las dos claves no son iguales.'); return; }
-    const { error } = await sb.auth.updateUser({ password: a });
-    if (error) { alertaEn('k-msg', error.message); return; }
-    setAviso('Clave cambiada.', 'ok'); vMiClave();
-  };
-}
-
 
 /* ---------------- AVISOS DE COBRO (dentro de Préstamos) ---------------- */
 let alertasCache = null;

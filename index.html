@@ -121,6 +121,15 @@ nav button{flex:1 0 auto;white-space:nowrap;padding-left:10px;padding-right:10px
   .stats{grid-template-columns:repeat(4,1fr)}
   .charts{grid-template-columns:repeat(3,1fr)}
 }
+.lv-cols{display:block}
+.lv-op{display:flex;align-items:center;gap:10px;margin:8px 0;padding:12px;border:1.5px solid var(--line);border-radius:12px;cursor:pointer;color:var(--ink);font-size:15px;min-height:48px}
+.lv-op:has(input:checked){border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent)}
+.lv-op input{width:20px;height:20px;margin:0;flex:0 0 auto}
+.lv-op .lv-on{flex:1;min-width:0}
+@media (min-width:1000px){
+  .lv-cols{display:grid;grid-template-columns:minmax(340px,420px) minmax(0,1fr);gap:0 20px;align-items:start}
+  .lv-a{position:sticky;top:64px}
+}
 .hd-btns{display:flex;gap:8px;align-items:center}
 .badge{background:var(--bad);color:#fff;border-radius:10px;padding:1px 6px;font-size:11px;font-weight:700;margin-left:3px}
 .acciones{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
@@ -2035,16 +2044,15 @@ async function vLavHoy() {
     </div>
     ${met ? `<p class="mute" style="margin:-4px 0 10px">${met}</p>` : ''}
     ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
+    <div class="lv-cols"><div class="lv-a">
     ${puede ? `
     <div class="card"><div class="row"><h2 style="margin:0">Nueva lavada</h2><button class="sec sm" id="lv-tog">${LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'}</button></div>
       <div id="lv-form" ${LAV.nuevaAbierta ? '' : 'hidden'}>
         ${!tiposAct.length ? `<p class="mute">${adm ? 'Primero define tus tipos de vehículo y servicios en la pestaña «Lavadero».' : 'El administrador aún no ha definido los servicios de este lavadero.'}</p>` : `
         <label>Tipo de vehículo</label><select id="lv-tipo"><option value="">Elige</option>${tiposAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
-        <label>Servicios</label><div id="lv-sv" class="mute">Elige primero el tipo de vehículo.</div>
+        <label>Servicio</label><div id="lv-sv" class="mute">Elige primero el tipo de vehículo.</div>
         <label>Quién lavó</label><select id="lv-lavador"><option value="">Elige</option>${lavsAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
-        <label>Placa (opcional)</label><input id="lv-placa" autocapitalize="characters" autocomplete="off" placeholder="ABC123">
-        <label>Cliente (opcional)</label><input id="lv-cli" autocomplete="off" placeholder="Nombre">
-        <label>Teléfono (opcional)</label><input id="lv-tel" inputmode="tel" autocomplete="off">
+        <label>Placa (opcional)</label><input id="lv-placa" autocapitalize="characters" autocomplete="off" placeholder="ABC123" maxlength="10">
         <label>Forma de pago</label><select id="lv-met">${Object.entries(METODOS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
         <p style="margin:12px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="lv-chg"> Cambiar el valor (descuento o extra)</label></p>
         <div id="lv-chgw" hidden><label>Valor a cobrar</label><input id="lv-valor" inputmode="numeric" autocomplete="off"><label>Motivo</label><input id="lv-motivo" autocomplete="off" placeholder="Ej: descuento cliente frecuente"></div>
@@ -2052,11 +2060,12 @@ async function vLavHoy() {
         <div id="lv-msg"></div>
         <div style="margin-top:10px"><button id="lv-go" style="width:100%">Registrar lavada</button></div>`}
       </div></div>` : ''}
+    </div><div class="lv-b">
     <div class="card"><h2>Lavadas del día (${dia.lavadas.filter(x => x.estado === 'activa').length})</h2>
       ${dia.lavadas.length ? dia.lavadas.map(x => `
         <div class="item ${x.estado === 'activa' ? '' : 'off'}">
           <div class="row"><div><b>#${x.consecutivo}</b> ${esc(x.tipo)}${x.placa ? ' · ' + esc(x.placa) : ''}${x.estado === 'anulada' ? ' <span class="tag bad">anulada</span>' : ''}
-            <div class="mute" style="font-size:12.5px">${x.items.map(i => esc(i.nombre)).join(' + ')} · lavó ${esc(x.lavador)}${x.cliente ? ' · ' + esc(x.cliente) : ''}${x.tel ? ' · ' + esc(x.tel) : ''}</div>
+            <div class="mute" style="font-size:12.5px">${x.items.map(i => esc(i.nombre)).join(' + ')} · lavó ${esc(x.lavador)}</div>
             ${x.motivo ? `<div class="mute" style="font-size:12px">Valor lista ${money(x.valor_lista)} · ${esc(x.motivo)}</div>` : ''}
             ${x.estado === 'anulada' && x.motivo_anulacion ? `<div class="mute" style="font-size:12px">Motivo: ${esc(x.motivo_anulacion)}</div>` : ''}</div>
             <div style="text-align:right"><b>${money(x.valor)}</b><div class="mute" style="font-size:12px">${METODOS[x.metodo] || x.metodo}${adm && x.comision != null ? ' · com. ' + money(x.comision) : ''}</div>
@@ -2068,7 +2077,8 @@ async function vLavHoy() {
         <div style="margin:8px 0 6px"><button id="lm-go" class="sec">Agregar</button></div>` : ''}
       ${dia.movimientos.length ? dia.movimientos.map(m => `<div class="item ${m.estado === 'activo' ? '' : 'off'}"><div class="row"><div>${esc(m.concepto)} <span class="tag">${m.tipo === 'gasto' ? 'gasto' : 'ingreso extra'}</span>${m.estado === 'anulado' ? ' <span class="tag bad">anulado</span>' : ''}</div>
         <div style="text-align:right"><b>${m.tipo === 'gasto' ? '-' : ''}${money(m.valor)}</b>${puede && m.estado === 'activo' ? `<div><button class="sec sm" data-anm="${m.id}">Anular</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin movimientos.</p>'}</div>
-    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p><button id="lv-cerrar" class="bad" style="width:100%">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}`;
+    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p><button id="lv-cerrar" class="bad" style="width:100%">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}
+    </div></div>`;
 
   lavSelBind(vLavHoy);
   if ($('#lv-fecha')) $('#lv-fecha').onchange = e => { LAV.fecha = e.target.value || null; vLavHoy(); };
@@ -2080,27 +2090,27 @@ async function vLavHoy() {
   if ($('#lv-tog')) $('#lv-tog').onclick = () => { LAV.nuevaAbierta = !LAV.nuevaAbierta; $('#lv-form').hidden = !LAV.nuevaAbierta; $('#lv-tog').textContent = LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'; };
   if ($('#lv-tipo')) {
     const total = () => {
-      const cks = [...document.querySelectorAll('#lv-sv input:checked')];
-      $('#lv-total').textContent = money(cks.reduce((s, x) => s + Number(x.dataset.p), 0));
+      const ck = document.querySelector('#lv-sv input:checked');
+      $('#lv-total').textContent = money(ck ? Number(ck.dataset.p) : 0);
     };
     $('#lv-tipo').onchange = () => {
       const tid = $('#lv-tipo').value, sv = cat.servicios.filter(s => s.tipo_id === tid && s.activo);
-      $('#lv-sv').innerHTML = !tid ? 'Elige primero el tipo de vehículo.' : (sv.length ? sv.map(s => `<label style="display:flex;align-items:center;margin:6px 0;color:var(--ink);font-size:15px"><input type="checkbox" value="${s.id}" data-p="${s.precio}"><span style="flex:1">${esc(s.nombre)}</span><b>${money(s.precio)}</b></label>`).join('') : 'Este tipo no tiene servicios activos.');
+      $('#lv-sv').innerHTML = !tid ? 'Elige primero el tipo de vehículo.' : (sv.length ? sv.map(s => `<label class="lv-op"><input type="radio" name="lv-srv" value="${s.id}" data-p="${s.precio}"><span class="lv-on">${esc(s.nombre)}</span><b>${money(s.precio)}</b></label>`).join('') : 'Este tipo no tiene servicios activos.');
       document.querySelectorAll('#lv-sv input').forEach(i => i.onchange = total); total();
     };
     $('#lv-chg').onchange = () => { $('#lv-chgw').hidden = !$('#lv-chg').checked; };
     lavMoney($('#lv-valor'));
     $('#lv-placa').oninput = e => { e.target.value = e.target.value.toUpperCase(); };
     $('#lv-go').onclick = async () => {
-      const sv = [...document.querySelectorAll('#lv-sv input:checked')].map(x => x.value), chg = $('#lv-chg').checked;
+      const sv = [...document.querySelectorAll('#lv-sv input:checked')].map(x => x.value).slice(0, 1), chg = $('#lv-chg').checked;
       if (!$('#lv-tipo').value) return alertaEn('lv-msg', 'Elige el tipo de vehículo.');
-      if (!sv.length) return alertaEn('lv-msg', 'Elige al menos un servicio.');
+      if (!sv.length) return alertaEn('lv-msg', 'Elige el servicio.');
       if (!$('#lv-lavador').value) return alertaEn('lv-msg', 'Elige quién lavó.');
       if (chg && !$('#lv-valor').value.trim()) return alertaEn('lv-msg', 'Escribe el valor a cobrar.');
       $('#lv-go').disabled = true;
       const { error } = await sb.rpc('lav_registrar_lavada', {
         p_lav: LAV.sel, p_tipo: $('#lv-tipo').value, p_servicios: sv, p_lavador: $('#lv-lavador').value, p_placa: $('#lv-placa').value,
-        p_cliente: $('#lv-cli').value, p_tel: $('#lv-tel').value, p_metodo: $('#lv-met').value,
+        p_cliente: null, p_tel: null, p_metodo: $('#lv-met').value,
         p_valor: chg ? entero($('#lv-valor').value) : null, p_motivo: chg ? $('#lv-motivo').value : null, p_fecha: esHoy ? null : fecha });
       if (error) { alertaEn('lv-msg', error.message); $('#lv-go').disabled = false; return; }
       setAviso('Lavada registrada.', 'ok'); vLavHoy();

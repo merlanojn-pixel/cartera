@@ -2043,6 +2043,7 @@ async function vLavHoy() {
   const met = Object.entries(t.por_metodo || {}).map(([k, x]) => `${METODOS[k] || k}: ${money(x)}`).join(' · ');
   const tiposAct = cat.tipos.filter(x => x.activo), lavsAct = cat.lavadores.filter(x => x.activo);
   const baseL = lavNum(((c.lavaderos || []).find(l => l.id === LAV.sel) || {}).base);
+  const efCobrado = lavNum((t.por_metodo || {}).efectivo), esperadoEf = baseL + efCobrado + lavNum(t.ingresos_extra) - lavNum(t.gastos);
   v.innerHTML = avisoHtml() + lavBanner() + lavSelHtml() + `
     ${adm ? `<div class="card"><label style="margin-top:0">Fecha</label><input type="date" id="lv-fecha" value="${fecha}" max="${c.hoy}"></div>` : ''}
     <div class="stats">
@@ -2054,7 +2055,7 @@ async function vLavHoy() {
     </div>
     ${met ? `<p class="mute" style="margin:-4px 0 10px">${met}</p>` : ''}
     ${baseL > 0 ? `<p class="mute" style="margin:-4px 0 10px">Base de caja (para vueltos): <b>${money(baseL)}</b></p>` : ''}
-    ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${dia.cierre && dia.cierre.efectivo_contado != null ? `<div style="margin-top:4px">Efectivo contado ${money(dia.cierre.efectivo_contado)} · esperado ${money(dia.cierre.efectivo_esperado)} · ${lavDif(dia.cierre.diferencia)}</div>` : ''}${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
+    ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${dia.cierre && dia.cierre.efectivo_contado != null ? `<div style="margin-top:4px">Efectivo contado ${money(dia.cierre.efectivo_contado)} · esperado ${money(dia.cierre.efectivo_esperado)} · ${lavDif(dia.cierre.diferencia)}</div><div style="margin-top:4px">Se pagó a lavadores ${money(dia.cierre.comisiones)} · entregado al administrador ${money(Math.max(0, lavNum(dia.cierre.entrega_admin)))} · quedó la base ${money(dia.cierre.base)}</div>` : ''}${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
     <div class="lv-cols"><div class="lv-a">
     ${puede ? `
     <div class="card"><div class="row"><h2 style="margin:0">Nueva lavada</h2><button class="sec sm" id="lv-tog">${LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'}</button></div>
@@ -2086,24 +2087,23 @@ async function vLavHoy() {
             ${puede && x.estado === 'activa' ? `<button class="sec sm" data-anl="${x.id}" style="margin-top:4px">Anular</button>` : ''}</div></div></div>`).join('')
         : '<p class="mute">Todavía no hay lavadas este día.</p>'}</div>
     <div class="card"><h2>Ganancias de lavadores</h2>
+      <p class="mute" style="margin-top:0;font-size:12.5px">Lo que va ganando cada lavador hoy. Se calcula solo con su porcentaje y se paga al cerrar la caja.</p>
       ${dia.lavadores.length ? `
-        ${dia.lavadores.map(w => { const falta = lavNum(w.ganado) - lavNum(w.pagado); return `<div class="item"><div class="row"><div><b>${esc(w.nombre)}</b><div class="mute" style="font-size:12.5px">${w.n} lavada(s) · produjo ${money(w.produccion)}</div></div><div style="text-align:right"><b>${money(w.ganado)}</b><div class="mute" style="font-size:12px">ganó</div></div></div>
-          <div class="row" style="margin-top:4px;font-size:13px"><span class="mute">Pagado ${money(w.pagado)}</span><span style="${falta > 0 ? 'color:var(--bad);font-weight:600' : 'color:var(--mute)'}">${falta > 0 ? 'Falta pagar ' + money(falta) : (falta < 0 ? 'Se le pagó de más ' + money(-falta) : 'Al día')}</span></div>
-          <div class="acciones"><button class="sec sm" data-lwd="${w.id}">Ver detalle</button>${puede ? `<button class="sm" data-lwp="${w.id}">Pagar</button>` : ''}</div>
-          <div id="lwd-${w.id}" hidden style="margin-top:6px">${w.detalle.map(d => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line);font-size:13px"><div><b>#${d.consecutivo}</b> ${esc(d.tipo)}${d.placa ? ' · ' + esc(d.placa) : ''}<div class="mute" style="font-size:12px">${esc(d.servicio || '')} · cobrado ${money(d.valor)}</div></div><b>${money(d.ganancia)}</b></div>`).join('') || '<p class="mute">Sin lavadas.</p>'}</div>
-          ${puede ? `<div id="lwp-${w.id}" hidden class="lv-sub"><label>Valor a pagar a ${esc(w.nombre)}</label><input id="lwpv-${w.id}" inputmode="numeric" autocomplete="off" value="${falta > 0 ? milesTxt(falta) : ''}"><label>Nota (opcional)</label><input id="lwpn-${w.id}" autocomplete="off"><div id="lwpm-${w.id}"></div><div style="margin-top:8px"><button class="sm" data-lwp-go="${w.id}">Registrar pago</button></div></div>` : ''}</div>`; }).join('')}
-        <div class="row" style="margin-top:10px;font-size:14px"><b>Total</b><span><b>${money(dia.lavadores.reduce((a, w) => a + lavNum(w.ganado), 0))}</b> <span class="mute">· pagado ${money(dia.lavadores.reduce((a, w) => a + lavNum(w.pagado), 0))}</span></span></div>`
-      : '<p class="mute">Todavía no hay lavadas este día.</p>'}
-      ${dia.pagos.length ? `<h3>Pagos a lavadores</h3>${dia.pagos.map(p => `<div class="item ${p.estado === 'activo' ? '' : 'off'}"><div class="row"><div>${esc(p.lavador)}${p.nota ? ' <span class="mute">· ' + esc(p.nota) + '</span>' : ''}${p.estado === 'anulado' ? ' <span class="tag bad">anulado</span>' : ''}<div class="mute" style="font-size:12px">${p.desde_caja ? 'Salió de la caja' : 'No salió de la caja'}</div></div><div style="text-align:right"><b>${money(p.monto)}</b>${puede && p.estado === 'activo' && (adm || p.mio) ? `<div><button class="sec sm" data-anpg="${p.id}">Anular</button></div>` : ''}</div></div></div>`).join('')}` : ''}
-      ${lavNum(t.pagos_caja) > 0 ? `<p class="mute" style="font-size:12.5px;margin-bottom:0">Lo que pagaste desde la caja (${money(t.pagos_caja)}) se descuenta del efectivo que debe haber al cerrar.</p>` : ''}</div>
+        ${dia.lavadores.map(w => `<div class="item"><div class="row"><div><b>${esc(w.nombre)}</b><div class="mute" style="font-size:12.5px">${w.n} lavada(s) · produjo ${money(w.produccion)}</div></div><div style="text-align:right"><b>${money(w.ganado)}</b><div class="mute" style="font-size:12px">le toca</div></div></div>
+          <div class="acciones"><button class="sec sm" data-lwd="${w.id}">Ver detalle</button></div>
+          <div id="lwd-${w.id}" hidden style="margin-top:6px">${w.detalle.map(d => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line);font-size:13px"><div><b>#${d.consecutivo}</b> ${esc(d.tipo)}${d.placa ? ' · ' + esc(d.placa) : ''}<div class="mute" style="font-size:12px">${esc(d.servicio || '')} · cobrado ${money(d.valor)}</div></div><b>${money(d.ganancia)}</b></div>`).join('') || '<p class="mute">Sin lavadas.</p>'}</div></div>`).join('')}
+        <div class="row" style="margin-top:10px;font-size:14px"><b>Total para lavadores</b><b>${money(dia.lavadores.reduce((a, w) => a + lavNum(w.ganado), 0))}</b></div>`
+      : '<p class="mute">Todavía no hay lavadas este día.</p>'}</div>
     <div class="card"><h2>Gastos e ingresos extra</h2>
       ${puede ? `<div class="row" style="gap:8px"><select id="lm-tipo" style="flex:0 0 40%"><option value="gasto">Gasto</option><option value="ingreso">Ingreso extra</option></select><input id="lm-val" inputmode="numeric" placeholder="Valor" autocomplete="off"></div>
         <input id="lm-con" placeholder="Concepto (jabón, agua, venta de ambientador…)" autocomplete="off" style="margin-top:8px"><div id="lm-msg"></div>
         <div style="margin:8px 0 6px"><button id="lm-go" class="sec">Agregar</button></div>` : ''}
       ${dia.movimientos.length ? dia.movimientos.map(m => `<div class="item ${m.estado === 'activo' ? '' : 'off'}"><div class="row"><div>${esc(m.concepto)} <span class="tag">${m.tipo === 'gasto' ? 'gasto' : 'ingreso extra'}</span>${m.estado === 'anulado' ? ' <span class="tag bad">anulado</span>' : ''}</div>
         <div style="text-align:right"><b>${m.tipo === 'gasto' ? '-' : ''}${money(m.valor)}</b>${puede && m.estado === 'activo' ? `<div><button class="sec sm" data-anm="${m.id}">Anular</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin movimientos.</p>'}</div>
-    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Cuenta el efectivo que hay en la caja${baseL > 0 ? ' (con la base incluida)' : ''}${lavNum(t.pagos_caja) > 0 ? ', ya descontando lo que pagaste a lavadores desde la caja' : ''}. Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p>
-      <div id="lv-cf" hidden><label>Efectivo contado en caja</label><input id="lv-cont" inputmode="numeric" autocomplete="off" placeholder="Ej: 150.000"><label>Nota (opcional)</label><input id="lv-cnota" autocomplete="off" placeholder="Ej: faltó cambio de 2.000"><div id="lv-cmsg"></div></div>
+    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Cuenta el efectivo que hay en la caja${baseL > 0 ? ' (con la base incluida)' : ''}. Al cerrar, se reparte el día: se paga a los lavadores, se entrega la ganancia al administrador y queda solo la base. Ya no se podrá registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p>
+      <div id="lv-cf" hidden><p style="margin:0 0 8px">Debería haber en caja: <b>${money(esperadoEf)}</b> <span class="mute" style="font-size:12.5px">(base ${money(baseL)} + efectivo cobrado ${money(efCobrado)}${lavNum(t.ingresos_extra) ? ' + extras ' + money(t.ingresos_extra) : ''}${lavNum(t.gastos) ? ' − gastos ' + money(t.gastos) : ''})</span></p>
+        <label>Efectivo contado en caja</label><input id="lv-cont" inputmode="numeric" autocomplete="off" placeholder="Ej: 150.000">
+        <div id="lv-rep" style="margin-top:8px"></div><label>Nota (opcional)</label><input id="lv-cnota" autocomplete="off" placeholder="Ej: faltó cambio de 2.000"><div id="lv-cmsg"></div></div>
       <button id="lv-cerrar" class="bad" style="width:100%;margin-top:10px">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}
     </div></div>`;
 
@@ -2193,22 +2193,17 @@ async function vLavHoy() {
   }
   document.querySelectorAll('[id^="lwpv-"]').forEach(lavMoney);
   document.querySelectorAll('[data-lwd]').forEach(b => b.onclick = () => { const x = $('#lwd-' + b.dataset.lwd); x.hidden = !x.hidden; b.textContent = x.hidden ? 'Ver detalle' : 'Ocultar detalle'; });
-  document.querySelectorAll('[data-lwp]').forEach(b => b.onclick = () => { const x = $('#lwp-' + b.dataset.lwp); x.hidden = !x.hidden; if (!x.hidden) $('#lwpv-' + b.dataset.lwp).focus(); });
-  document.querySelectorAll('[data-lwp-go]').forEach(b => b.onclick = async () => {
-    const id = b.dataset.lwpGo, val = entero($('#lwpv-' + id).value);
-    if (!val) return alertaEn('lwpm-' + id, 'Escribe el valor que le vas a pagar.');
-    b.disabled = true;
-    const { error } = await sb.rpc('lav_pagar_lavador', { p_lavador: id, p_monto: val, p_fecha: esHoy ? null : fecha, p_nota: $('#lwpn-' + id).value });
-    if (error) { alertaEn('lwpm-' + id, error.message); b.disabled = false; return; }
-    setAviso('Pago registrado.', 'ok'); vLavHoy();
-  });
-  document.querySelectorAll('[data-anpg]').forEach(b => b.onclick = async () => {
-    if (!confirm('¿Anular este pago?')) return;
-    const { error } = await sb.rpc('lav_anular_pago_lavador', { p_id: b.dataset.anpg });
-    setAviso(error ? error.message : 'Pago anulado.', error ? 'err' : 'ok'); vLavHoy();
-  });
   if ($('#lv-cerrar')) {
     lavMoney($('#lv-cont'));
+    $('#lv-cont').addEventListener('input', () => {
+      const raw = $('#lv-cont').value.trim(); if (!raw) { $('#lv-rep').innerHTML = ''; return; }
+      const cont = entero(raw), ent = cont - baseL - lavNum(t.comisiones), dif = cont - esperadoEf;
+      $('#lv-rep').innerHTML = `<div class="lv-sub" style="margin:0"><div style="${dif ? 'color:var(--bad)' : 'color:var(--ok)'}">${lavDif(dif)}</div>
+        <div class="row" style="margin-top:6px"><span>Pagar a lavadores</span><b>${money(t.comisiones)}</b></div>
+        <div class="row"><span>Entregar al administrador</span><b>${ent >= 0 ? money(ent) : '$0'}</b></div>
+        <div class="row"><span>Queda en caja (base)</span><b>${money(baseL)}</b></div>
+        ${ent < 0 ? `<p style="margin:6px 0 0;color:var(--bad);font-size:13px">El efectivo no alcanza para pagar a los lavadores: faltan ${money(-ent)}. Ese valor se cubre con lo que entró por transferencia.</p>` : ''}</div>`;
+    });
     $('#lv-cerrar').onclick = async () => {
       if ($('#lv-cf').hidden) { $('#lv-cf').hidden = false; $('#lv-cont').focus(); $('#lv-cerrar').textContent = 'Confirmar cierre de caja'; return; }
       if (!$('#lv-cont').value.trim()) return alertaEn('lv-cmsg', 'Cuenta el efectivo y escribe cuánto hay en caja (si no hay nada, escribe 0).');
@@ -2254,28 +2249,16 @@ async function vLavReportes() {
     <div class="card"><h2>Lavadores</h2>${r.por_lavador.length ? r.por_lavador.map(w => `
       <div class="item ${w.activo ? '' : 'off'}"><div class="row"><div><b>${esc(w.nombre)}</b>${ls.length > 1 ? ` <span class="tag">${esc(w.lavadero)}</span>` : ''}
         <div class="mute" style="font-size:12.5px">${w.n} lavada(s) · produjo ${money(w.produccion)} · ganó ${money(w.comision_periodo)} en el período</div>
-        <div class="mute" style="font-size:12.5px">Total ganado ${money(w.comision_total)} · pagado ${money(w.pagado_total)}</div></div>
-        <div style="text-align:right"><div class="mute" style="font-size:12px">Se le debe</div><b class="${lavNum(w.debe) > 0 ? '' : 'ok-t'}">${money(w.debe)}</b>
-        ${me.es_admin && lavNum(w.debe) > 0 && c.puede_escribir ? `<div><button class="sm" data-pag="${w.id}" data-n="${esc(w.nombre)}" data-d="${w.debe}" style="margin-top:4px">Pagar</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin lavadores.</p>'}</div>
+        <div class="mute" style="font-size:12.5px">Total ganado ${money(w.comision_total)} · ya pagado al cerrar caja ${money(w.pagado_total)}</div></div>
+        <div style="text-align:right"><div class="mute" style="font-size:12px">Pendiente (días sin cerrar)</div><b class="${lavNum(w.debe) > 0 ? '' : 'ok-t'}">${money(w.debe)}</b></div></div></div>`).join('') : '<p class="mute">Sin lavadores.</p>'}</div>
     <div class="card viz"><h2>Servicios más vendidos</h2>${r.por_servicio.length ? lavBarras(r.por_servicio.map(s => ({ n: s.nombre, v: lavNum(s.valor), s: s.n === 1 ? '1 vez' : s.n + ' veces' }))) : '<p class="mute">Sin ventas en el período.</p>'}
       <h3>Por tipo de vehículo</h3>${r.por_tipo.length ? lavBarras(r.por_tipo.map(s => ({ n: s.nombre, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}
       <h3>Por forma de pago</h3>${r.por_metodo.length ? lavBarras(r.por_metodo.map(s => ({ n: METODOS[s.metodo] || s.metodo, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}</div>
     ${r.por_dia.length ? `<div class="card"><h2>Día por día</h2><table class="matrix tabla"><thead><tr><th>Día</th><th>Lavadas</th><th>Ingresos</th><th>Gastos</th></tr></thead><tbody>${r.por_dia.map(d => `<tr><td>${fdate(d.fecha)}</td><td>${d.n}</td><td>${money(d.ingresos)}</td><td>${money(d.gastos)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div class="card"><h2>Cajas cerradas</h2>${r.cierres.length ? r.cierres.map(x => { const k = cnt[x.lavadero + '|' + x.fecha]; return `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}<div class="mute" style="font-size:12.5px">${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div>${k && k.contado != null ? `<div style="font-size:12.5px;${Number(k.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Contado ${money(k.contado)} · ${lavDif(k.diferencia)}</div>` : ''}</div><b>${money(x.utilidad)}</b></div></div>`; }).join('') : '<p class="mute">Sin cajas cerradas en el período.</p>'}</div>
-    ${r.pagos_lavadores.length ? `<div class="card"><h2>Pagos a lavadores</h2>${r.pagos_lavadores.map(p => `<div class="item"><div class="row"><div>${esc(p.lavador)} <span class="mute">${fdate(p.fecha)}${p.nota ? ' · ' + esc(p.nota) : ''}</span></div><div><b>${money(p.monto)}</b> ${c.puede_escribir ? `<button class="sec sm" data-anp="${p.id}">Anular</button>` : ''}</div></div></div>`).join('')}</div>` : ''}`;
+    <div class="card"><h2>Cajas cerradas</h2>${r.cierres.length ? r.cierres.map(x => { const k = cnt[x.lavadero + '|' + x.fecha]; return `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}<div class="mute" style="font-size:12.5px">${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div>${k && k.contado != null ? `<div style="font-size:12.5px;${Number(k.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Contado ${money(k.contado)} · ${lavDif(k.diferencia)}</div>` : ''}</div><b>${money(x.utilidad)}</b></div></div>`; }).join('') : '<p class="mute">Sin cajas cerradas en el período.</p>'}</div>`;
   document.querySelectorAll('[data-rg]').forEach(b => b.onclick = () => { LAV.rango = b.dataset.rg; vLavReportes(); });
   $('#rp-d').onchange = $('#rp-h').onchange = () => { LAV.rango = 'rango'; LAV.desde = $('#rp-d').value; LAV.hasta = $('#rp-h').value; vLavReportes(); };
   if ($('#rp-lav')) $('#rp-lav').onchange = e => { LAV.repLav = e.target.value; vLavReportes(); };
-  document.querySelectorAll('[data-pag]').forEach(b => b.onclick = async () => {
-    const t = prompt('¿Cuánto le pagas a ' + b.dataset.n + '? (se le debe ' + money(b.dataset.d) + ')', String(Math.round(b.dataset.d))); if (t === null) return;
-    const { error: e } = await sb.rpc('lav_pagar_lavador', { p_lavador: b.dataset.pag, p_monto: entero(t), p_fecha: null, p_nota: null });
-    setAviso(e ? e.message : 'Pago registrado.', e ? 'err' : 'ok'); vLavReportes();
-  });
-  document.querySelectorAll('[data-anp]').forEach(b => b.onclick = async () => {
-    if (!confirm('¿Anular este pago al lavador?')) return;
-    const { error: e } = await sb.rpc('lav_anular_pago_lavador', { p_id: b.dataset.anp });
-    setAviso(e ? e.message : 'Pago anulado.', e ? 'err' : 'ok'); vLavReportes();
-  });
 }
 
 /* ---------- LAVADERO: lavaderos, tipos, servicios, precios y lavadores (administrador) ---------- */
@@ -2612,7 +2595,7 @@ async function vLavResumen() {
       const nuevo = Date.now() - new Date(x.hora).getTime() < 86400000;
       return `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}${nuevo ? ' <span class="tag ok">nuevo</span>' : ''}
         <div class="mute" style="font-size:12.5px">Cerró ${esc(x.quien)} · ${hace(x.hora)} · ${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div>
-        ${x.contado != null ? `<div style="font-size:12.5px;${Number(x.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Base ${money(x.base)} · esperado ${money(x.esperado)} · contado ${money(x.contado)} · ${lavDif(x.diferencia)}</div>` : '<div class="mute" style="font-size:12.5px">Sin conteo de efectivo</div>'}
+        ${x.contado != null ? `<div style="font-size:12.5px;${Number(x.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Base ${money(x.base)} · esperado ${money(x.esperado)} · contado ${money(x.contado)} · ${lavDif(x.diferencia)}</div><div class="mute" style="font-size:12.5px">Lavadores ${money(x.comisiones)} · para el administrador ${money(Math.max(0, lavNum(x.entrega)))}</div>` : '<div class="mute" style="font-size:12.5px">Sin conteo de efectivo</div>'}
         ${x.nota ? `<div class="mute" style="font-size:12.5px">Nota: ${esc(x.nota)}</div>` : ''}</div><b>${money(x.utilidad)}</b></div></div>`; }).join('') : '<p class="mute">No hay cierres en este período.</p>'}</div>
     <p class="mute" style="font-size:12.5px">Para cambiar precios, lavadores o la base de caja, entra a «Lavadero»: allí eliges el lavadero arriba sin salir de la pantalla.</p>`;
   document.querySelectorAll('[data-rsrg]').forEach(b => b.onclick = () => { LAV.rsRango = b.dataset.rsrg; vLavResumen(); });

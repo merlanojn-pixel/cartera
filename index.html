@@ -121,6 +121,14 @@ nav button{flex:1 0 auto;white-space:nowrap;padding-left:10px;padding-right:10px
   .stats{grid-template-columns:repeat(4,1fr)}
   .charts{grid-template-columns:repeat(3,1fr)}
 }
+.lv-chips{display:flex;flex-wrap:wrap;gap:8px}
+.lv-chip{background:var(--card);color:var(--ink);border:1.5px solid var(--line);border-radius:12px;padding:12px 16px;font:inherit;font-size:15px;min-height:46px;cursor:pointer}
+.lv-chip.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent);font-weight:600}
+.lv-sub{margin-top:8px;padding:10px 12px;border:1px dashed var(--line);border-radius:12px}
+.lv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:12px}
+.lv-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px}
+.lv-kpis div{display:flex;flex-direction:column;font-size:12.5px}
+.lv-kpis b{font-size:16px}
 .lv-cols{display:block}
 .lv-op{display:flex;align-items:center;gap:10px;margin:8px 0;padding:12px;border:1.5px solid var(--line);border-radius:12px;cursor:pointer;color:var(--ink);font-size:15px;min-height:48px}
 .lv-op:has(input:checked){border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent)}
@@ -517,7 +525,7 @@ function marcaPestana(sinSesion) {
     if (f) f.href = favNegocio();
   } catch (e) {}
 }
-const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Equipo', config: 'Mi negocio', cuenta: 'Mi clave', negocios: 'Negocios', lav_hoy: 'Hoy', lav_reportes: 'Reportes', lav_ajustes: 'Lavadero', lav_equipo: 'Equipo' };
+const TAB_NOMBRE = { prestamos: 'Préstamos', personas: 'Clientes', alertas: 'Alertas', estadisticas: 'Estadísticas', importar: 'Importar', roles: 'Roles', usuarios: 'Equipo', config: 'Mi negocio', cuenta: 'Mi clave', negocios: 'Negocios', lav_resumen: 'Resumen', lav_hoy: 'Hoy', lav_reportes: 'Reportes', lav_ajustes: 'Lavadero', lav_equipo: 'Equipo' };
 
 function render() {
   marcaPestana();
@@ -1962,8 +1970,8 @@ function activarTips(mapa) {
 /* ---------------- DUEÑO DE LA PLATAFORMA: NEGOCIOS ---------------- */
 /* ======================= LAVADEROS ======================= */
 const LAV = { ctx: null, sel: null, fecha: null, rango: 'hoy', desde: null, hasta: null, repLav: '', nuevaAbierta: false };
-const LAV_VISTAS = { lav_hoy: vLavHoy, lav_reportes: vLavReportes, lav_ajustes: vLavAjustes, lav_equipo: vLavEquipo };
-const lavTabs = () => (me && me.es_admin) ? ['lav_hoy', 'lav_reportes', 'lav_ajustes', 'lav_equipo'] : ['lav_hoy'];
+const LAV_VISTAS = { lav_resumen: vLavResumen, lav_pedir: vLavPedir, lav_hoy: vLavHoy, lav_reportes: vLavReportes, lav_ajustes: vLavAjustes, lav_equipo: vLavEquipo };
+const lavTabs = () => (me && me.es_admin) ? ['lav_resumen', 'lav_hoy', 'lav_reportes', 'lav_ajustes', 'lav_equipo'] : ['lav_hoy'];
 const METODOS = { efectivo: 'Efectivo', transferencia: 'Transferencia', otro: 'Otro' };
 
 async function lavCargarContexto() {
@@ -2009,9 +2017,10 @@ function lavSelHtml() {
 function lavSelBind(recargar) { const s = $('#lv-sel'); if (s) s.onchange = () => { LAV.sel = s.value; recargar(); }; }
 function lavBanner() {
   const c = LAV.ctx; if (!c || !c.plan) return '';
-  if (c.plan.vencido) return `<div class="msg err">El plan de tu negocio venció el ${fdate(c.plan.vigente_hasta)}. Puedes ver tu información, pero no registrar nada nuevo hasta renovar.</div>`;
+  const btn = me.es_admin ? ' <div style="margin-top:8px"><button class="sm" data-lav-pedir="renovar">Renovar mi plan</button></div>' : '';
+  if (c.plan.vencido) return `<div class="msg err">El plan de tu negocio venció el ${fdate(c.plan.vigente_hasta)}. Puedes ver tu información, pero no registrar nada nuevo hasta renovar.${btn}</div>`;
   const d = diasEntre(c.hoy, c.plan.vigente_hasta);
-  return d <= 7 ? `<div class="msg err">Tu plan vence el ${fdate(c.plan.vigente_hasta)} (${d === 0 ? 'hoy' : 'en ' + d + ' día(s)'}). Renuévalo para seguir registrando.</div>` : '';
+  return d <= 7 ? `<div class="msg err">Tu plan vence el ${fdate(c.plan.vigente_hasta)} (${d === 0 ? 'hoy' : 'en ' + d + ' día(s)'}). Renuévalo para seguir registrando.${btn}</div>` : '';
 }
 
 /* ---------- HOY: lavadas, gastos y cierre del día ---------- */
@@ -2033,6 +2042,7 @@ async function vLavHoy() {
   const ingresos = lavNum(t.ingresos_lavadas) + lavNum(t.ingresos_extra);
   const met = Object.entries(t.por_metodo || {}).map(([k, x]) => `${METODOS[k] || k}: ${money(x)}`).join(' · ');
   const tiposAct = cat.tipos.filter(x => x.activo), lavsAct = cat.lavadores.filter(x => x.activo);
+  const baseL = lavNum(((c.lavaderos || []).find(l => l.id === LAV.sel) || {}).base);
   v.innerHTML = avisoHtml() + lavBanner() + lavSelHtml() + `
     ${adm ? `<div class="card"><label style="margin-top:0">Fecha</label><input type="date" id="lv-fecha" value="${fecha}" max="${c.hoy}"></div>` : ''}
     <div class="stats">
@@ -2043,17 +2053,21 @@ async function vLavHoy() {
       ${miniTile(adm ? 'Utilidad' : 'Ingresos menos gastos', money(dia.utilidad), '', 'ok-t')}
     </div>
     ${met ? `<p class="mute" style="margin:-4px 0 10px">${met}</p>` : ''}
-    ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
+    ${baseL > 0 ? `<p class="mute" style="margin:-4px 0 10px">Base de caja (para vueltos): <b>${money(baseL)}</b></p>` : ''}
+    ${dia.cerrado ? `<div class="msg ok">Día cerrado${adm ? '' : '. Ya no se puede registrar ni anular nada de este día'}.${dia.cierre && dia.cierre.efectivo_contado != null ? `<div style="margin-top:4px">Efectivo contado ${money(dia.cierre.efectivo_contado)} · esperado ${money(dia.cierre.efectivo_esperado)} · ${lavDif(dia.cierre.diferencia)}</div>` : ''}${adm ? ` <button class="sec sm" id="lv-reab">Reabrir día</button>` : ''}</div>` : ''}
     <div class="lv-cols"><div class="lv-a">
     ${puede ? `
     <div class="card"><div class="row"><h2 style="margin:0">Nueva lavada</h2><button class="sec sm" id="lv-tog">${LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'}</button></div>
       <div id="lv-form" ${LAV.nuevaAbierta ? '' : 'hidden'}>
         ${!tiposAct.length ? `<p class="mute">${adm ? 'Primero define tus tipos de vehículo y servicios en la pestaña «Lavadero».' : 'El administrador aún no ha definido los servicios de este lavadero.'}</p>` : `
-        <label>Tipo de vehículo</label><select id="lv-tipo"><option value="">Elige</option>${tiposAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
+        <label>Tipo de vehículo</label><input type="hidden" id="lv-tipo" value=""><div class="lv-chips" id="lv-tipos">${tiposAct.map(x => `<button type="button" class="lv-chip" data-tipo="${x.id}">${esc(x.nombre)}</button>`).join('')}</div>
         <label>Servicio</label><div id="lv-sv" class="mute">Elige primero el tipo de vehículo.</div>
-        <label>Quién lavó</label><select id="lv-lavador"><option value="">Elige</option>${lavsAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
+        <label>Quién lavó</label>${lavsAct.length > 3 ? '<input id="lv-lq" autocomplete="off" placeholder="Escribe para buscar…" style="margin-bottom:6px">' : ''}<select id="lv-lavador"><option value="">Elige</option>${lavsAct.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')}</select>
+        <p style="margin:6px 0 0"><button type="button" class="sec sm" id="lw-mas">+ Crear lavador</button></p>
+        <div id="lw-form" hidden class="lv-sub"><label>Nombre del lavador</label><input id="lw-n" autocomplete="off"><label>Teléfono (opcional)</label><input id="lw-t" inputmode="tel" autocomplete="off"><div id="lw-msg"></div><div style="margin-top:8px"><button type="button" class="sm" id="lw-go">Guardar lavador</button></div></div>
         <label>Placa (opcional)</label><input id="lv-placa" autocapitalize="characters" autocomplete="off" placeholder="ABC123" maxlength="10">
         <label>Forma de pago</label><select id="lv-met">${Object.entries(METODOS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
+        <div id="lv-pw"><label>El cliente paga con (opcional)</label><input id="lv-pag" inputmode="numeric" autocomplete="off" placeholder="Ej: 20.000"><div id="lv-vuelto" style="margin-top:6px;font-size:16px"></div></div>
         <p style="margin:12px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="lv-chg"> Cambiar el valor (descuento o extra)</label></p>
         <div id="lv-chgw" hidden><label>Valor a cobrar</label><input id="lv-valor" inputmode="numeric" autocomplete="off"><label>Motivo</label><input id="lv-motivo" autocomplete="off" placeholder="Ej: descuento cliente frecuente"></div>
         <div class="row" style="margin-top:12px"><b>Total: <span id="lv-total">$0</span></b></div>
@@ -2077,7 +2091,9 @@ async function vLavHoy() {
         <div style="margin:8px 0 6px"><button id="lm-go" class="sec">Agregar</button></div>` : ''}
       ${dia.movimientos.length ? dia.movimientos.map(m => `<div class="item ${m.estado === 'activo' ? '' : 'off'}"><div class="row"><div>${esc(m.concepto)} <span class="tag">${m.tipo === 'gasto' ? 'gasto' : 'ingreso extra'}</span>${m.estado === 'anulado' ? ' <span class="tag bad">anulado</span>' : ''}</div>
         <div style="text-align:right"><b>${m.tipo === 'gasto' ? '-' : ''}${money(m.valor)}</b>${puede && m.estado === 'activo' ? `<div><button class="sec sm" data-anm="${m.id}">Anular</button></div>` : ''}</div></div></div>`).join('') : '<p class="mute">Sin movimientos.</p>'}</div>
-    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p><button id="lv-cerrar" class="bad" style="width:100%">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}
+    ${puede ? `<div class="card"><h2>Cerrar la caja</h2><p class="mute" style="margin-top:0">Cuenta el efectivo que hay en la caja${baseL > 0 ? ' (con la base incluida)' : ''}. Al cerrar, queda guardado el total del día y ya no se puede registrar ni anular nada de ${esHoy ? 'hoy' : 'ese día'}.</p>
+      <div id="lv-cf" hidden><label>Efectivo contado en caja</label><input id="lv-cont" inputmode="numeric" autocomplete="off" placeholder="Ej: 150.000"><label>Nota (opcional)</label><input id="lv-cnota" autocomplete="off" placeholder="Ej: faltó cambio de 2.000"><div id="lv-cmsg"></div></div>
+      <button id="lv-cerrar" class="bad" style="width:100%;margin-top:10px">Cerrar caja del ${fdate(fecha)}</button></div>` : ''}
     </div></div>`;
 
   lavSelBind(vLavHoy);
@@ -2089,16 +2105,44 @@ async function vLavHoy() {
   };
   if ($('#lv-tog')) $('#lv-tog').onclick = () => { LAV.nuevaAbierta = !LAV.nuevaAbierta; $('#lv-form').hidden = !LAV.nuevaAbierta; $('#lv-tog').textContent = LAV.nuevaAbierta ? 'Ocultar' : 'Abrir'; };
   if ($('#lv-tipo')) {
-    const total = () => {
-      const ck = document.querySelector('#lv-sv input:checked');
-      $('#lv-total').textContent = money(ck ? Number(ck.dataset.p) : 0);
+    const precioSel = () => { const ck = document.querySelector('#lv-sv input:checked'); return ck ? Number(ck.dataset.p) : 0; };
+    const valorCobro = () => ($('#lv-chg').checked && $('#lv-valor').value.trim()) ? entero($('#lv-valor').value) : precioSel();
+    const vuelto = () => {
+      const w = $('#lv-pw'), ef = $('#lv-met').value === 'efectivo'; w.hidden = !ef;
+      const pg = entero($('#lv-pag').value), tot = valorCobro();
+      $('#lv-vuelto').innerHTML = !ef || !$('#lv-pag').value.trim() ? '' : (pg < tot ? `<span style="color:var(--bad)">Faltan ${money(tot - pg)}</span>` : `<b>Devuelve ${money(pg - tot)}</b>`);
     };
-    $('#lv-tipo').onchange = () => {
+    const total = () => { $('#lv-total').textContent = money(valorCobro()); vuelto(); };
+    const pickTipo = () => {
       const tid = $('#lv-tipo').value, sv = cat.servicios.filter(s => s.tipo_id === tid && s.activo);
+      document.querySelectorAll('#lv-tipos .lv-chip').forEach(b => b.classList.toggle('on', b.dataset.tipo === tid));
       $('#lv-sv').innerHTML = !tid ? 'Elige primero el tipo de vehículo.' : (sv.length ? sv.map(s => `<label class="lv-op"><input type="radio" name="lv-srv" value="${s.id}" data-p="${s.precio}"><span class="lv-on">${esc(s.nombre)}</span><b>${money(s.precio)}</b></label>`).join('') : 'Este tipo no tiene servicios activos.');
       document.querySelectorAll('#lv-sv input').forEach(i => i.onchange = total); total();
     };
-    $('#lv-chg').onchange = () => { $('#lv-chgw').hidden = !$('#lv-chg').checked; };
+    document.querySelectorAll('#lv-tipos .lv-chip').forEach(b => b.onclick = () => { $('#lv-tipo').value = b.dataset.tipo; pickTipo(); });
+    $('#lv-pag').oninput = e => { formatearMiles(e.target); vuelto(); }; $('#lv-met').onchange = vuelto;
+    $('#lv-valor').addEventListener('input', total);
+    // lavadores: lista que se puede filtrar escribiendo
+    const lavs = [...lavsAct];
+    const pintaLav = (sel) => {
+      const q = ($('#lv-lq') ? lavNorm($('#lv-lq').value) : ''), ok = lavs.filter(w => !q || lavNorm(w.nombre).includes(q));
+      const cur = sel !== undefined ? sel : $('#lv-lavador').value;
+      $('#lv-lavador').innerHTML = '<option value="">' + (ok.length ? 'Elige' : 'Sin resultados') + '</option>' + ok.map(w => `<option value="${w.id}">${esc(w.nombre)}</option>`).join('');
+      $('#lv-lavador').value = ok.some(w => w.id === cur) ? cur : (q && ok.length === 1 ? ok[0].id : '');
+    };
+    if ($('#lv-lq')) { $('#lv-lq').oninput = () => pintaLav(); $('#lv-lq').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const o = $('#lv-lavador').options[1]; if (o) $('#lv-lavador').value = o.value; } }; }
+    $('#lw-mas').onclick = () => { $('#lw-form').hidden = !$('#lw-form').hidden; if (!$('#lw-form').hidden) $('#lw-n').focus(); };
+    $('#lw-go').onclick = async () => {
+      if (!$('#lw-n').value.trim()) return alertaEn('lw-msg', 'Escribe el nombre del lavador.');
+      $('#lw-go').disabled = true;
+      const { data, error } = await sb.rpc('lav_guardar_lavador', { p_lav: LAV.sel, p_id: null, p_nombre: $('#lw-n').value, p_telefono: $('#lw-t').value, p_activo: true });
+      $('#lw-go').disabled = false;
+      if (error) return alertaEn('lw-msg', error.message);
+      lavs.push({ id: data, nombre: $('#lw-n').value.trim(), activo: true }); lavs.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      if ($('#lv-lq')) $('#lv-lq').value = ''; pintaLav(data);
+      $('#lw-n').value = ''; $('#lw-t').value = ''; $('#lw-msg').innerHTML = ''; $('#lw-form').hidden = true;
+    };
+    $('#lv-chg').onchange = () => { $('#lv-chgw').hidden = !$('#lv-chg').checked; total(); };
     lavMoney($('#lv-valor'));
     $('#lv-placa').oninput = e => { e.target.value = e.target.value.toUpperCase(); };
     $('#lv-go').onclick = async () => {
@@ -2136,12 +2180,22 @@ async function vLavHoy() {
       setAviso('Movimiento guardado.', 'ok'); vLavHoy();
     };
   }
-  if ($('#lv-cerrar')) $('#lv-cerrar').onclick = async () => {
-    if (!confirm('¿Cerrar la caja del ' + fdate(fecha) + '? Después no se podrá registrar ni anular nada de ese día.')) return;
-    const { error } = await sb.rpc('lav_cerrar_dia', { p_lav: LAV.sel, p_fecha: esHoy ? null : fecha, p_nota: null });
-    setAviso(error ? error.message : 'Caja cerrada. Quedó guardado el total del día.', error ? 'err' : 'ok'); vLavHoy();
-  };
+  if ($('#lv-cerrar')) {
+    lavMoney($('#lv-cont'));
+    $('#lv-cerrar').onclick = async () => {
+      if ($('#lv-cf').hidden) { $('#lv-cf').hidden = false; $('#lv-cont').focus(); $('#lv-cerrar').textContent = 'Confirmar cierre de caja'; return; }
+      if (!$('#lv-cont').value.trim()) return alertaEn('lv-cmsg', 'Cuenta el efectivo y escribe cuánto hay en caja (si no hay nada, escribe 0).');
+      const cont = entero($('#lv-cont').value);
+      if (!confirm('¿Cerrar la caja del ' + fdate(fecha) + ' con ' + money(cont) + ' en efectivo? Después no se podrá registrar ni anular nada de ese día.')) return;
+      $('#lv-cerrar').disabled = true;
+      const { data, error } = await sb.rpc('lav_cerrar_dia', { p_lav: LAV.sel, p_fecha: esHoy ? null : fecha, p_nota: $('#lv-cnota').value, p_contado: cont });
+      if (error) { alertaEn('lv-cmsg', error.message); $('#lv-cerrar').disabled = false; return; }
+      const dif = data && data.cierre ? data.cierre.diferencia : null;
+      setAviso('Caja cerrada. ' + (dif == null ? '' : lavDif(dif) + '.'), dif ? 'err' : 'ok'); vLavHoy();
+    };
+  }
 }
+const lavDif = d => d == null ? '' : (Number(d) === 0 ? 'Cuadró perfecto' : (Number(d) > 0 ? 'Sobran ' + money(d) : 'Faltan ' + money(-d)));
 
 /* ---------- REPORTES (administrador) ---------- */
 async function vLavReportes() {
@@ -2150,6 +2204,8 @@ async function vLavReportes() {
   if (LAV.rango !== 'rango') [LAV.desde, LAV.hasta] = lavRango(LAV.rango, c.hoy);
   if (!LAV.desde || !LAV.hasta) [LAV.desde, LAV.hasta] = lavRango('hoy', c.hoy);
   const { data: r, error } = await sb.rpc('lav_reporte', { p_lav: LAV.repLav || null, p_desde: LAV.desde, p_hasta: LAV.hasta });
+  const cnt = {};
+  if (!error) { const rc = await sb.rpc('lav_reporte_cierres', { p_lav: LAV.repLav || null, p_desde: LAV.desde, p_hasta: LAV.hasta }); if (!rc.error) (rc.data || []).forEach(x => { cnt[x.lavadero + '|' + x.fecha] = x; }); }
   if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + '</div>'; return; }
   const t = r.totales, ing = lavNum(t.ingresos_lavadas) + lavNum(t.ingresos_extra), util = ing - lavNum(t.gastos) - lavNum(t.comisiones);
   const R = [['hoy', 'Hoy'], ['semana', 'Esta semana'], ['mes', 'Este mes'], ['mes_ant', 'Mes anterior'], ['rango', 'Fechas']];
@@ -2178,7 +2234,7 @@ async function vLavReportes() {
       <h3>Por tipo de vehículo</h3>${r.por_tipo.length ? lavBarras(r.por_tipo.map(s => ({ n: s.nombre, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}
       <h3>Por forma de pago</h3>${r.por_metodo.length ? lavBarras(r.por_metodo.map(s => ({ n: METODOS[s.metodo] || s.metodo, v: lavNum(s.valor), s: s.n + ' lavada(s)' }))) : '<p class="mute">—</p>'}</div>
     ${r.por_dia.length ? `<div class="card"><h2>Día por día</h2><table class="matrix tabla"><thead><tr><th>Día</th><th>Lavadas</th><th>Ingresos</th><th>Gastos</th></tr></thead><tbody>${r.por_dia.map(d => `<tr><td>${fdate(d.fecha)}</td><td>${d.n}</td><td>${money(d.ingresos)}</td><td>${money(d.gastos)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div class="card"><h2>Cajas cerradas</h2>${r.cierres.length ? r.cierres.map(x => `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}<div class="mute" style="font-size:12.5px">${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div></div><b>${money(x.utilidad)}</b></div></div>`).join('') : '<p class="mute">Sin cajas cerradas en el período.</p>'}</div>
+    <div class="card"><h2>Cajas cerradas</h2>${r.cierres.length ? r.cierres.map(x => { const k = cnt[x.lavadero + '|' + x.fecha]; return `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}<div class="mute" style="font-size:12.5px">${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div>${k && k.contado != null ? `<div style="font-size:12.5px;${Number(k.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Contado ${money(k.contado)} · ${lavDif(k.diferencia)}</div>` : ''}</div><b>${money(x.utilidad)}</b></div></div>`; }).join('') : '<p class="mute">Sin cajas cerradas en el período.</p>'}</div>
     ${r.pagos_lavadores.length ? `<div class="card"><h2>Pagos a lavadores</h2>${r.pagos_lavadores.map(p => `<div class="item"><div class="row"><div>${esc(p.lavador)} <span class="mute">${fdate(p.fecha)}${p.nota ? ' · ' + esc(p.nota) : ''}</span></div><div><b>${money(p.monto)}</b> ${c.puede_escribir ? `<button class="sec sm" data-anp="${p.id}">Anular</button>` : ''}</div></div></div>`).join('')}</div>` : ''}`;
   document.querySelectorAll('[data-rg]').forEach(b => b.onclick = () => { LAV.rango = b.dataset.rg; vLavReportes(); });
   $('#rp-d').onchange = $('#rp-h').onchange = () => { LAV.rango = 'rango'; LAV.desde = $('#rp-d').value; LAV.hasta = $('#rp-h').value; vLavReportes(); };
@@ -2207,21 +2263,24 @@ async function vLavAjustes() {
   v.innerHTML = avisoHtml() + lavBanner() + `
     <div class="card"><h2>Tus lavaderos</h2>
       <p class="mute" style="margin-top:0">Tu plan permite <b>${p.max_lavaderos}</b> lavadero(s) activos (usas ${usados}). Vigente hasta el ${fdate(p.vigente_hasta)}.</p>
-      ${ls.map(l => `<div class="item ${l.activo ? '' : 'off'}"><div class="row"><div><b>${esc(l.nombre)}</b>${l.activo ? '' : ' <span class="tag">desactivado</span>'}<div class="mute" style="font-size:12.5px">${esc(l.direccion || '')}${l.direccion ? ' · ' : ''}Lavador gana ${lavNum(l.comision_pct)}%</div></div>
+      <p style="margin:0 0 10px"><button class="sec sm" data-lav-pedir="nuevo">Pedir otro lavadero</button></p>
+      ${ls.map(l => `<div class="item ${l.activo ? '' : 'off'}"><div class="row"><div><b>${esc(l.nombre)}</b>${l.activo ? '' : ' <span class="tag">desactivado</span>'}<div class="mute" style="font-size:12.5px">${esc(l.direccion || '')}${l.direccion ? ' · ' : ''}Lavador gana ${lavNum(l.comision_pct)}% · Base de caja ${money(l.base)}</div></div>
         <span><button class="sec sm" data-le="${l.id}">Editar</button></span></div>
         <div id="le-${l.id}" hidden style="margin-top:8px"><label>Nombre</label><input id="le-n-${l.id}" value="${esc(l.nombre)}"><label>Dirección (opcional)</label><input id="le-d-${l.id}" value="${esc(l.direccion || '')}">
           <label>Porcentaje que gana el lavador (%)</label><input id="le-c-${l.id}" inputmode="decimal" value="${lavNum(l.comision_pct)}">
+          <label>Base de caja (dinero para dar vueltos)</label><input id="le-b-${l.id}" inputmode="numeric" value="${milesTxt(l.base)}"><p class="mute" style="font-size:12.5px;margin:4px 0 0">No es ingreso: es la plata con la que se abre la caja cada día.</p>
           <p style="margin:10px 0 0"><label style="display:inline;margin:0"><input type="checkbox" id="le-a-${l.id}" ${l.activo ? 'checked' : ''}> Lavadero activo</label></p>
           <div id="le-m-${l.id}"></div><div style="margin-top:8px"><button class="sm" data-lg="${l.id}">Guardar</button></div></div></div>`).join('') || '<p class="mute">Todavía no tienes lavaderos.</p>'}
-      ${puede && usados < p.max_lavaderos ? `<h3>Nuevo lavadero</h3><label>Nombre</label><input id="ln-n" placeholder="Ej: Sede Centro"><label>Dirección (opcional)</label><input id="ln-d"><label>Porcentaje que gana el lavador (%)</label><input id="ln-c" inputmode="decimal" value="40"><div id="ln-m"></div><div style="margin-top:10px"><button id="ln-go">Crear lavadero</button></div>` : (usados >= p.max_lavaderos ? '<p class="mute">Ya usas todos los lavaderos de tu plan. Para agregar otro, pídelo a la plataforma.</p>' : '')}</div>
+      ${puede && usados < p.max_lavaderos ? `<h3>Nuevo lavadero</h3><label>Nombre</label><input id="ln-n" placeholder="Ej: Sede Centro"><label>Dirección (opcional)</label><input id="ln-d"><label>Porcentaje que gana el lavador (%)</label><input id="ln-c" inputmode="decimal" value="40"><div id="ln-m"></div><div style="margin-top:10px"><button id="ln-go">Crear lavadero</button></div>` : (usados >= p.max_lavaderos ? `<div class="msg err">Tu plan permite ${p.max_lavaderos} lavadero(s) y ya usas ${usados}. Para agregar otro, solicítalo.<div style="margin-top:8px"><button class="sm" data-lav-pedir="nuevo">Pedir otro lavadero</button></div></div>` : '')}</div>
     ${ls.length ? `<div class="card"><label style="margin-top:0">Estás configurando</label><select id="lv-sel">${ls.map(l => `<option value="${l.id}" ${l.id === LAV.sel ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select></div>` : ''}
     ${cat && sel ? lavCatalogoHtml(cat, sel, puede) : ''}`;
   lavSelBind(vLavAjustes);
+  document.querySelectorAll('input[id^="le-b-"]').forEach(lavMoney);
   document.querySelectorAll('[data-le]').forEach(b => b.onclick = () => { const x = $('#le-' + b.dataset.le); x.hidden = !x.hidden; });
   document.querySelectorAll('[data-lg]').forEach(b => b.onclick = async () => {
     const id = b.dataset.lg, pct = decimal($('#le-c-' + id).value);
     if (isNaN(pct)) return alertaEn('le-m-' + id, 'Escribe un porcentaje válido.');
-    const { error } = await sb.rpc('lav_editar_lavadero', { p_id: id, p_nombre: $('#le-n-' + id).value, p_direccion: $('#le-d-' + id).value, p_comision: pct, p_activo: $('#le-a-' + id).checked });
+    const { error } = await sb.rpc('lav_editar_lavadero', { p_id: id, p_nombre: $('#le-n-' + id).value, p_direccion: $('#le-d-' + id).value, p_comision: pct, p_activo: $('#le-a-' + id).checked, p_base: entero($('#le-b-' + id).value) });
     if (error) return alertaEn('le-m-' + id, error.message);
     setAviso('Lavadero actualizado.', 'ok'); vLavAjustes();
   });
@@ -2393,7 +2452,19 @@ async function vLavNegocios() {
   if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + (/plataforma_lav_resumen/.test(error.message) ? ' Falta correr 19_lavaderos.sql en Supabase.' : '') + '</div>'; return; }
   const ini = new Date(); ini.setDate(ini.getDate() + 30); const por30 = ini.toLocaleDateString('en-CA');
   const total = ls.filter(n => n.estado === 'activo').reduce((s, n) => s + lavNum(n.cobro_mensual), 0);
-  v.innerHTML = avisoHtml() + (lavNegCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente la cuenta <b>' + esc(lavNegCreado.cuenta) + '</b> y la clave temporal que se mostró. Al entrar por primera vez le pedirá crear la suya.</div>' : '') + `
+  const { data: cb, error: ecb } = await sb.rpc('lav_datos_cobro');
+  const cobroHtml = ecb ? `<div class="msg err">${esc(ecb.message)}${/lav_datos_cobro/.test(ecb.message) ? ' Falta correr 22_mejoras_lavaderos.sql en Supabase.' : ''}</div>` : `
+    <div class="card"><div class="row"><h2 style="margin:0">Datos de cobro</h2><button class="sec sm" id="cb-tog">Editar</button></div>
+      <p class="mute" style="margin:6px 0 0;font-size:13px">Es lo que ven tus clientes cuando piden otro lavadero o renuevan. ${cb ? esc(cb.medio) + ' · ' + esc(cb.llave) + ' · WhatsApp ' + esc(cb.whatsapp) + ' · ' + money(cb.precio_lavadero) + ' por lavadero' : 'Aún sin configurar.'}</p>
+      <div id="cb-f" hidden><label>Medio de pago</label><input id="cb-medio" value="${esc((cb && cb.medio) || '')}" placeholder="Ej: Nequi / Bre-B">
+        <label>A nombre de</label><input id="cb-tit" value="${esc((cb && cb.titular) || '')}"><label>Llave o número</label><input id="cb-llave" value="${esc((cb && cb.llave) || '')}">
+        <label>WhatsApp para recibir comprobantes (con código de país)</label><input id="cb-wa" inputmode="tel" value="${esc((cb && cb.whatsapp) || '')}" placeholder="573001234567">
+        <label>Valor mensual por lavadero</label><input id="cb-precio" inputmode="numeric" value="${milesTxt((cb && cb.precio_lavadero) || 0)}">
+        <label>Instrucciones (opcional)</label><input id="cb-ins" value="${esc((cb && cb.instrucciones) || '')}">
+        <label>Imagen del código QR</label><input type="file" id="cb-qr" accept="image/*">
+        <div id="cb-prev" style="margin-top:8px">${cb && cb.qr ? `<img alt="QR actual" src="${esc(cb.qr)}" style="max-width:200px;border-radius:8px;background:#fff">` : ''}</div>
+        <div id="cb-m"></div><div style="margin-top:10px"><button id="cb-go">Guardar datos de cobro</button></div></div></div>`;
+  v.innerHTML = avisoHtml() + cobroHtml + (lavNegCreado ? '<div class="msg ok">Negocio creado. Entrégale al cliente la cuenta <b>' + esc(lavNegCreado.cuenta) + '</b> y la clave temporal que se mostró. Al entrar por primera vez le pedirá crear la suya.</div>' : '') + `
     <div class="card"><h2>Nuevo negocio de lavaderos</h2>
       <p class="mute" style="font-size:13px;margin-top:0">Tu cliente armará sus lavaderos, servicios y precios a su medida. Tú defines cuántos lavaderos puede tener, el precio de cada uno y hasta cuándo vale su acceso. Nunca ves sus lavadas ni su contabilidad.</p>
       <label>Nombre del negocio</label><input id="ln-nom" placeholder="Ej: Lavado Express">
@@ -2401,7 +2472,7 @@ async function vLavNegocios() {
       <label>Nombre del administrador</label><input id="ln-adm"><label>Usuario del administrador</label><input id="ln-usr" autocapitalize="none" spellcheck="false">
       <label>Clave temporal del administrador (puedes dejar esta)</label><input id="ln-pass" type="text" autocomplete="off" value="${genClave()}">
       <label>Cuántos lavaderos puede tener</label><input id="ln-max" inputmode="numeric" value="1">
-      <label>Precio mensual por lavadero</label><input id="ln-precio" inputmode="numeric" placeholder="Ej: 50.000">
+      <label>Precio mensual por lavadero</label><input id="ln-precio" inputmode="numeric" value="${cb && cb.precio_lavadero ? milesTxt(cb.precio_lavadero) : ''}" placeholder="Ej: 300.000">
       <label>Acceso vigente hasta</label><input type="date" id="ln-hasta" value="${por30}">
       <div id="ln-msg"></div><div style="margin-top:12px"><button id="ln-add">Crear negocio</button></div></div>
     <div class="card"><h2>Negocios de lavaderos (${ls.length})</h2>${ls.length ? `<p class="mute" style="margin-top:0">Cobro mensual de los activos: <b>${money(total)}</b></p>` : ''}${ls.map(n => `
@@ -2414,7 +2485,31 @@ async function vLavNegocios() {
         <div class="row" id="lnk-${n.id}" style="margin-top:8px" hidden><input type="text" autocomplete="off" value="${genClave()}" id="lnk-i-${n.id}"><button class="sm" data-lnkgo="${n.id}">Guardar</button></div>
         ${n.pagos.length ? `<div class="mute" style="font-size:12px;margin-top:8px">Pagos: ${n.pagos.slice(0, 4).map(p => fdate(p.fecha) + ' ' + money(p.monto)).join(' · ')}</div>` : ''}
       </div>`).join('') || '<p class="mute">Todavía no has creado negocios de lavaderos.</p>'}</div>`;
-  document.querySelectorAll('input[id^="ln-precio"],input[id^="lpl-p-"],input[id^="lpg-v-"]').forEach(lavMoney);
+  document.querySelectorAll('input[id^="ln-precio"],input[id^="lpl-p-"],input[id^="lpg-v-"],#cb-precio').forEach(lavMoney);
+  if ($('#cb-tog')) {
+    let qrNuevo = null;
+    $('#cb-tog').onclick = () => { $('#cb-f').hidden = !$('#cb-f').hidden; };
+    $('#cb-qr').onchange = () => {
+      const f = $('#cb-qr').files[0]; if (!f) return;
+      const img = new Image(), u = URL.createObjectURL(f);
+      img.onload = () => {
+        const k = Math.min(1, 520 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(img, 0, 0, cv.width, cv.height);
+        qrNuevo = cv.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(u);
+        $('#cb-prev').innerHTML = `<img alt="QR nuevo" src="${qrNuevo}" style="max-width:200px;border-radius:8px;background:#fff">`;
+      };
+      img.onerror = () => alertaEn('cb-m', 'No se pudo leer la imagen.'); img.src = u;
+    };
+    $('#cb-go').onclick = async () => {
+      if (!$('#cb-medio').value.trim() || !$('#cb-wa').value.trim()) return alertaEn('cb-m', 'Escribe el medio de pago y el WhatsApp.');
+      $('#cb-go').disabled = true;
+      const { error } = await sb.rpc('plataforma_guardar_cobro', { p_medio: $('#cb-medio').value, p_titular: $('#cb-tit').value, p_llave: $('#cb-llave').value, p_whatsapp: $('#cb-wa').value,
+        p_instrucciones: $('#cb-ins').value, p_precio: entero($('#cb-precio').value), p_qr: qrNuevo });
+      if (error) { alertaEn('cb-m', error.message); $('#cb-go').disabled = false; return; }
+      setAviso('Datos de cobro guardados.', 'ok'); vNegocios();
+    };
+  }
   $('#ln-add').onclick = async () => {
     const nom = $('#ln-nom').value.trim(), cod = limpiarUsuario($('#ln-cod').value), usr = limpiarUsuario($('#ln-usr').value), pass = $('#ln-pass').value, max = entero($('#ln-max').value);
     lavNegCreado = null;
@@ -2452,6 +2547,91 @@ async function vLavNegocios() {
     if (!e) { const n0 = ls.find(x => x.id === id); mostrarClave((n0.admin_usuario || 'admin') + '@' + n0.codigo, k); }
     fin(e, 'Clave del administrador cambiada.');
   });
+}
+
+
+/* ---------- RESUMEN (administrador): todos sus lavaderos en una sola pantalla ---------- */
+async function vLavResumen() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto(); if (!c) { v.innerHTML = '<div class="msg err">No se pudo cargar.</div>'; return; }
+  const ls = (c.lavaderos || []);
+  if (!ls.length) { v.innerHTML = avisoHtml() + lavBanner() + '<div class="card"><h2>Crea tu primer lavadero</h2><p class="mute">Ve a la pestaña «Lavadero»: allí lo creas y defines tus tipos de vehículo, servicios, precios y lavadores.</p></div>'; return; }
+  LAV.rsLavs = (LAV.rsLavs || []).filter(id => ls.some(l => l.id === id));
+  const R = [['hoy', 'Hoy'], ['semana', 'Esta semana'], ['mes', 'Este mes'], ['mes_ant', 'Mes anterior'], ['rango', 'Fechas']];
+  const rg = LAV.rsRango || 'hoy';
+  let desde, hasta;
+  if (rg === 'rango') { desde = LAV.rsDesde || c.hoy; hasta = LAV.rsHasta || c.hoy; } else [desde, hasta] = lavRango(rg, c.hoy);
+  const { data: r, error } = await sb.rpc('lav_resumen', { p_desde: desde, p_hasta: hasta, p_lavs: LAV.rsLavs.length ? LAV.rsLavs : null });
+  if (error) { v.innerHTML = avisoHtml() + '<div class="msg err">' + esc(error.message) + (/lav_resumen/.test(error.message) ? ' Falta correr 22_mejoras_lavaderos.sql en Supabase.' : '') + '</div>'; return; }
+  const L = r.lavaderos, sum = k => L.reduce((a, x) => a + lavNum(x[k]), 0);
+  const ing = sum('ingresos'), gas = sum('gastos'), com = sum('comisiones'), util = ing - gas - com;
+  const pend = L.filter(x => lavNum(x.dias_sin_cerrar) > 0);
+  const hace = h => { const m = Math.round((Date.now() - new Date(h).getTime()) / 60000); return m < 1 ? 'ahora' : m < 60 ? 'hace ' + m + ' min' : m < 1440 ? 'hace ' + Math.round(m / 60) + ' h' : fdate(String(h).slice(0, 10)); };
+  v.innerHTML = avisoHtml() + lavBanner() + `
+    <div class="card"><div class="lv-chips">${R.map(([k, n]) => `<button type="button" class="lv-chip ${rg === k ? 'on' : ''}" data-rsrg="${k}">${n}</button>`).join('')}</div>
+      ${rg === 'rango' ? `<div class="row" style="gap:8px;margin-top:8px"><input type="date" id="rs-d" value="${desde}" max="${c.hoy}"><input type="date" id="rs-h" value="${hasta}" max="${c.hoy}"></div>` : `<p class="mute" style="margin:8px 0 0;font-size:12.5px">${desde === hasta ? fdate(desde) : fdate(desde) + ' al ' + fdate(hasta)}</p>`}
+      ${ls.length > 1 ? `<div class="lv-chips" style="margin-top:10px"><button type="button" class="lv-chip ${LAV.rsLavs.length ? '' : 'on'}" data-rsl="todos">Todos los lavaderos</button>${ls.map(l => `<button type="button" class="lv-chip ${LAV.rsLavs.includes(l.id) ? 'on' : ''}" data-rsl="${l.id}">${esc(l.nombre)}</button>`).join('')}</div>` : ''}</div>
+    <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">${miniTile('Lavadas', sum('n_lavadas'))}${miniTile('Ingresos', money(ing))}${miniTile('Gastos', money(gas))}${miniTile('Comisiones', money(com))}${miniTile('Utilidad', money(util), '', 'ok-t')}</div>
+    ${pend.length ? `<div class="msg err">Hay días sin cerrar la caja: ${pend.map(x => esc(x.nombre) + ' (' + x.dias_sin_cerrar + ')').join(', ')}. Los últimos 30 días.</div>` : ''}
+    <div class="lv-grid">${L.map(x => {
+      const util1 = lavNum(x.ingresos) - lavNum(x.gastos) - lavNum(x.comisiones), dif = x.dif_hoy;
+      const tag = x.caja_hoy === 'cerrada' ? (dif != null && Number(dif) !== 0 ? `<span class="tag bad">Cerrada con diferencia</span>` : '<span class="tag ok">Caja cerrada hoy</span>') : '<span class="tag">Caja abierta hoy</span>';
+      return `<div class="card ${x.activo ? '' : 'off'}" style="margin:0"><div class="row"><b>${esc(x.nombre)}</b>${tag}</div>
+        <div class="lv-kpis"><div><span class="mute">Lavadas</span><b>${lavNum(x.n_lavadas)}</b></div><div><span class="mute">Ingresos</span><b>${money(x.ingresos)}</b></div><div><span class="mute">Gastos</span><b>${money(x.gastos)}</b></div><div><span class="mute">Utilidad</span><b class="ok-t">${money(util1)}</b></div></div>
+        ${dif != null && Number(dif) !== 0 ? `<p style="margin:6px 0 0;color:var(--bad);font-size:13px">Hoy: ${lavDif(dif)}</p>` : ''}
+        ${lavNum(x.dias_sin_cerrar) > 0 ? `<p style="margin:6px 0 0;color:var(--bad);font-size:13px">${x.dias_sin_cerrar} día(s) sin cerrar</p>` : ''}
+        ${ls.length > 1 ? `<p style="margin:8px 0 0"><button class="sec sm" data-rsv="${x.id}">Ver solo este</button></p>` : ''}</div>`; }).join('')}</div>
+    <div class="card"><h2>Cierres de caja</h2>${r.cierres.length ? r.cierres.map(x => {
+      const nuevo = Date.now() - new Date(x.hora).getTime() < 86400000;
+      return `<div class="item"><div class="row"><div><b>${fdate(x.fecha)}</b>${ls.length > 1 ? ` <span class="tag">${esc(x.lavadero)}</span>` : ''}${nuevo ? ' <span class="tag ok">nuevo</span>' : ''}
+        <div class="mute" style="font-size:12.5px">Cerró ${esc(x.quien)} · ${hace(x.hora)} · ${x.n_lavadas} lavada(s) · ingresos ${money(x.ingresos)} · gastos ${money(x.gastos)}</div>
+        ${x.contado != null ? `<div style="font-size:12.5px;${Number(x.diferencia) ? 'color:var(--bad)' : 'color:var(--mute)'}">Base ${money(x.base)} · esperado ${money(x.esperado)} · contado ${money(x.contado)} · ${lavDif(x.diferencia)}</div>` : '<div class="mute" style="font-size:12.5px">Sin conteo de efectivo</div>'}
+        ${x.nota ? `<div class="mute" style="font-size:12.5px">Nota: ${esc(x.nota)}</div>` : ''}</div><b>${money(x.utilidad)}</b></div></div>`; }).join('') : '<p class="mute">No hay cierres en este período.</p>'}</div>
+    <p class="mute" style="font-size:12.5px">Para cambiar precios, lavadores o la base de caja, entra a «Lavadero»: allí eliges el lavadero arriba sin salir de la pantalla.</p>`;
+  document.querySelectorAll('[data-rsrg]').forEach(b => b.onclick = () => { LAV.rsRango = b.dataset.rsrg; vLavResumen(); });
+  if ($('#rs-d')) $('#rs-d').onchange = $('#rs-h').onchange = () => { LAV.rsDesde = $('#rs-d').value; LAV.rsHasta = $('#rs-h').value; vLavResumen(); };
+  document.querySelectorAll('[data-rsl]').forEach(b => b.onclick = () => {
+    const id = b.dataset.rsl;
+    if (id === 'todos') LAV.rsLavs = []; else LAV.rsLavs = LAV.rsLavs.includes(id) ? LAV.rsLavs.filter(x => x !== id) : [...LAV.rsLavs, id];
+    vLavResumen();
+  });
+  document.querySelectorAll('[data-rsv]').forEach(b => b.onclick = () => { LAV.rsLavs = [b.dataset.rsv]; vLavResumen(); });
+}
+
+/* ---------- PEDIR OTRO LAVADERO / RENOVAR (cobro de la plataforma) ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-lav-pedir]');
+  if (b && me && me.es_admin) { LAV.pedirModo = b.dataset.lavPedir; tab = 'lav_pedir'; setAviso(null); render(); }
+});
+async function vLavPedir() {
+  const v = $('#vista'); v.innerHTML = '<p class="mute">Cargando…</p>';
+  const c = await lavCargarContexto(); if (!c || !c.plan) { v.innerHTML = '<div class="msg err">No se pudo cargar.</div>'; return; }
+  const { data: cb } = await sb.rpc('lav_datos_cobro');
+  const modo = LAV.pedirModo === 'renovar' ? 'renovar' : 'nuevo', p = c.plan;
+  const precio = lavNum(p.precio_lavadero) || lavNum(cb && cb.precio_lavadero);
+  const activos = (c.lavaderos || []).filter(l => l.activo).length, max = lavNum(p.max_lavaderos);
+  const mensualHoy = precio * max, mensualNuevo = precio * (max + 1);
+  const monto = modo === 'nuevo' ? precio : mensualHoy;
+  const neg = (c.nombre_negocio || 'mi negocio') + (c.codigo ? ' (código: ' + c.codigo + ')' : '');
+  const msg = modo === 'nuevo'
+    ? `Hola, soy el administrador de ${neg}. Tengo ${activos} de ${max} lavaderos habilitados y quiero agregar uno más (${money(precio)} al mes). Ya realicé el pago y te envío el comprobante.`
+    : `Hola, soy el administrador de ${neg}. Quiero renovar mi plan${p.vigente_hasta ? ' (vence el ' + fdate(p.vigente_hasta) + ')' : ''}: ${max} lavadero(s), ${money(mensualHoy)} al mes. Ya realicé el pago y te envío el comprobante.`;
+  const wa = cb && cb.whatsapp ? 'https://wa.me/' + cb.whatsapp + '?text=' + encodeURIComponent(msg) : '';
+  v.innerHTML = avisoHtml() + `
+    <div class="card"><h2>${modo === 'nuevo' ? 'Pedir otro lavadero' : 'Renovar mi plan'}</h2>
+      ${modo === 'nuevo'
+        ? `<p style="margin-top:0">Cada lavadero adicional cuesta <b>${money(precio)} al mes</b>.</p><p class="mute">Hoy tienes ${activos} de ${max} lavadero(s) habilitados. Con uno más tendrías <b>${max + 1}</b> y tu pago mensual pasaría de ${money(mensualHoy)} a <b>${money(mensualNuevo)}</b>.</p>`
+        : `<p style="margin-top:0">Tu plan: <b>${max} lavadero(s)</b> · <b>${money(mensualHoy)} al mes</b>.</p><p class="mute">${p.vencido ? 'Venció el ' : 'Vence el '}${fdate(p.vigente_hasta)}.</p>`}
+      ${cb ? `<h3>Cómo pagar</h3>
+        <p style="margin:0 0 8px">Valor a pagar: <b>${money(monto)}</b></p>
+        ${cb.qr ? `<div style="text-align:center;background:#fff;border-radius:12px;padding:8px;max-width:300px;margin:0 auto"><img alt="Código QR para pagar" src="${esc(cb.qr)}" style="width:100%;height:auto;display:block"></div>` : ''}
+        <p style="margin:10px 0 0"><b>${esc(cb.medio)}</b>${cb.titular ? ' · ' + esc(cb.titular) : ''}${cb.llave ? '<br>Llave: <b>' + esc(cb.llave) + '</b>' : ''}</p>
+        ${cb.instrucciones ? `<p class="mute" style="margin:8px 0 0">${esc(cb.instrucciones)}</p>` : ''}
+        <h3>Cuando pagues</h3><p class="mute" style="margin-top:0">Envía el comprobante por WhatsApp. Cuando lo revisemos, ${modo === 'nuevo' ? 'te habilitamos el lavadero' : 'renovamos tu plan'}.</p>
+        ${wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener" style="display:block">Enviar comprobante por WhatsApp</a>` : '<p class="mute">Aún no hay un WhatsApp configurado. Comunícate con la plataforma.</p>'}`
+      : '<div class="msg err">Aún no están configurados los datos de pago. Comunícate con la plataforma.</div>'}
+      <p style="margin:14px 0 0"><button class="sec" id="pd-vol">Volver</button></p></div>`;
+  $('#pd-vol').onclick = () => { tab = modo === 'nuevo' ? 'lav_ajustes' : 'lav_resumen'; render(); };
 }
 
 let negocioCreado = null;

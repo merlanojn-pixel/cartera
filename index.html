@@ -770,7 +770,7 @@ function cuotaAPagar(k, c) {
 const interesMes = (cap, tasa, fre, n) => { const m = Math.ceil(n / PERIODOS_MES[fre]); return { meses: m, inte: Math.round(cap * tasa / 100 * m) }; };
 const mesesDe = c => { const b = Number(c.capital) * Number(c.tasa_mensual) / 100; return b ? Math.round(Number(c.interes_total) / b * 100) / 100 : 0; };
 const mesesTxt = m => (Number.isInteger(m) ? String(m) : String(m)) + (m === 1 ? ' mes' : ' meses');
-const NOMBRES_FILTRO = { todos: 'Todos', mora: 'En mora', hoy: 'Cobran hoy', prox: 'Próximos 3 días', vigentes: 'Vigentes', pagados: 'Paz y salvo', refinanciados: 'Refinanciados', anulados: 'Anulados' };
+const NOMBRES_FILTRO = { todos: 'Activos', mora: 'En mora', hoy: 'Cobran hoy', prox: 'Próximos 3 días', pagados: 'Historial · Paz y salvo', refinanciados: 'Historial · Refinanciados', anulados: 'Historial · Anulados' };
 const btnWa = c => { if (c.estado !== 'vigente' || c.u > 2) return ''; const w = enlaceCobro(c, c.k); return w ? `<a class="btn sm" href="${w}" target="_blank" rel="noopener" onclick="event.stopPropagation()">WhatsApp</a>` : '<span class="mute" style="font-size:12px">Sin teléfono</span>'; };
 
 function tablaPrestamos(lista) {
@@ -811,7 +811,7 @@ async function vPrestamos() {
   const vencido = vig.reduce((s, c) => s + c.k.vencido, 0);
   const cobroHoy = vig.reduce((s, c) => s + c.k.cu.filter(q => q.fecha_vencimiento === h).reduce((t, q) => t + Math.max(0, Number(q.valor) - Number(q.pagado)), 0), 0);
   let lista = cuentas.filter(c => ({
-    todos: c.estado !== 'anulado', vigentes: c.estado === 'vigente', mora: c.u === 0, hoy: c.u === 1, prox: c.u === 2,
+    todos: c.estado === 'vigente', vigentes: c.estado === 'vigente', mora: c.u === 0, hoy: c.u === 1, prox: c.u === 2,
     pagados: c.estado === 'pagado', refinanciados: c.estado === 'refinanciado', anulados: c.estado === 'anulado' })[filtroPres]);
   const fechaProx = c => c.k.proxima ? c.k.proxima.fecha_vencimiento : '9999';
   lista.sort((a, b) => a.u - b.u || (a.u === 0 ? b.k.diasMora - a.k.diasMora : 0) || fechaProx(a).localeCompare(fechaProx(b)));

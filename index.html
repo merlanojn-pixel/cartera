@@ -467,6 +467,7 @@ function elegirCliente(id) {
   $('#n-busca').hidden = true;
   $('#n-elegido').hidden = false;
   $('#n-elegido').innerHTML = '<span><b>' + esc(p.nombre) + '</b> <span class="mute">· CC ' + esc(p.cedula) + '</span></span><button class="sec sm" type="button" id="n-cambiar">Cambiar</button>';
+  if (window.refiAlElegir) window.refiAlElegir();
 }
 document.addEventListener('input', e => {
   const t = e.target;
@@ -492,7 +493,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest ? e.target.closest('[data-pick], #n-cambiar, #n-ircli') : null;
   if (!b) return;
   if (b.id === 'n-ircli') { tab = 'personas'; setAviso(null); render(); return; }
-  if (b.id === 'n-cambiar') { $('#n-per').value = ''; $('#n-elegido').hidden = true; $('#n-busca').hidden = false; $('#n-busca').value = ''; $('#n-busca').focus(); return; }
+  if (b.id === 'n-cambiar') { $('#n-per').value = ''; $('#n-elegido').hidden = true; $('#n-busca').hidden = false; $('#n-busca').value = ''; $('#n-busca').focus(); if (window.refiAlElegir) window.refiAlElegir(); return; }
   elegirCliente(b.dataset.pick);
 });
 
@@ -829,6 +830,7 @@ async function vPrestamos() {
       ${clientes.length ? '' : '<p class="mute">Primero registra al cliente en la pestaña Clientes.</p>'}
       <label>¿Qué vas a registrar?</label><select id="n-tipo">${can('prestamos', 'crear') ? '<option value="prestamo">Préstamo de dinero</option>' : ''}${can('fiados', 'crear') ? '<option value="fiado">Producto a crédito</option>' : ''}</select>
       <label>Cliente</label><input type="hidden" id="n-per" value=""><input id="n-busca" autocomplete="off" enterkeyhint="search" placeholder="Escribe el nombre o la cédula"><div id="n-res" class="res-lista"></div><div id="n-elegido" class="cli-elegido" hidden></div>
+      <div id="n-refi" class="card" hidden style="border-left:4px solid var(--brand);margin:10px 0"></div>
       <div id="n-desc-w" hidden><label>Producto que se entrega</label><input id="n-desc" maxlength="200" placeholder="Ej: nevera, celular, mercancía"></div>
       <label id="n-cap-l">Capital prestado ($)</label><input id="n-cap" inputmode="numeric" data-miles placeholder="1.000.000" autocomplete="off">
       <div id="n-tasa-w"><label>Interés mensual (%)</label><input id="n-tasa" inputmode="decimal" value="${tasaDe(can('prestamos', 'crear') ? 'prestamo' : 'fiado')}">
@@ -863,6 +865,14 @@ async function vPrestamos() {
 
   if ($('#n-go')) {
     const gananciaFi = cap => { const m = $('#n-modo').value; return m === 'precio' ? (entero($('#n-precio').value) || 0) - cap : m === 'pct' ? Math.round(cap * (decimal($('#n-pct').value) || 0) / 100) : 0; };
+    const vigDe = () => { const per = $('#n-per').value; return per && $('#n-tipo').value === 'prestamo' ? cuentas.filter(x => x.persona_id === per && x.estado === 'vigente' && (x.tipo || 'prestamo') === 'prestamo' && x.k.saldo > 0) : []; };
+    const refiSel = () => {
+      const l = vigDe(); if (!l.length) return null;
+      if (!me.es_admin) return { bloquea: true, l };
+      const ck = $('#n-refi-ck'); if (!ck || !ck.checked) return null;
+      const id = $('#n-refi-sel') ? $('#n-refi-sel').value : l[0].id;
+      return { c: l.find(x => x.id === id) || l[0] };
+    };
     const prev = () => {
       if ($('#n-tipo').value === 'fiado') {
         const cap = entero($('#n-cap').value), n = entero($('#n-cuo').value), m = $('#n-modo').value;
@@ -875,8 +885,24 @@ async function vPrestamos() {
       if (!cap || !n || isNaN(tasa)) { $('#n-prev').innerHTML = 'Escribe capital, tasa y cuotas para ver el cálculo.'; return; }
       const exacto = n / PERIODOS_MES[fre], meses = Math.ceil(exacto), inte = Math.round(cap * tasa / 100 * meses), tot = cap + inte;
       $('#n-prev').innerHTML = `Interés total: <b>${money(inte)}</b> (${tasa}% × ${meses} ${meses === 1 ? 'mes' : 'meses'}${Number.isInteger(exacto) ? '' : ', porque la cuota ' + n + ' cae en el ' + (ORD_MES[meses] || meses + '.º') + ' mes'})<br>Total a pagar: <b>${money(tot)}</b><br>${n} cuotas de <b>${money(Math.round(tot / n))}</b>`;
-      if (estCierre && cap > Number(estCierre.base)) $('#n-prev').innerHTML += '<br><b class="bad-t">Ojo: tu base disponible es ' + money(estCierre.base) + ' y este préstamo es de ' + money(cap) + '.</b>';
+      const rs = refiSel(), deb = rs && rs.c ? rs.c.k.saldo : 0;
+      if (rs && rs.c) $('#n-prev').innerHTML += `<br>Se descuenta lo que debe (#${pad(rs.c.consecutivo)}): <b>−${money(deb)}</b><br>Se le gira al cliente: <b>${cap >= deb ? money(cap - deb) : '—'}</b>` + (cap < deb ? '<br><b class="bad-t">El valor nuevo debe ser al menos lo que debe (' + money(deb) + ').</b>' : '');
+      if (estCierre && cap - deb > Number(estCierre.base)) $('#n-prev').innerHTML += '<br><b class="bad-t">Ojo: tu base disponible es ' + money(estCierre.base) + ' y ' + (deb ? 'lo que se le gira' : 'este préstamo') + ' es de ' + money(cap - deb) + '.</b>';
     };
+    const pintaRefi = () => {
+      const w = $('#n-refi'), l = vigDe();
+      if (!l.length) { w.hidden = true; w.innerHTML = ''; prev(); return; }
+      w.hidden = false;
+      const lin = x => `#${pad(x.consecutivo)} · debe ${money(x.k.saldo)}`;
+      if (!me.es_admin) { w.innerHTML = `<b>Este cliente ya tiene un préstamo vigente</b><div class="mute" style="font-size:13px">${l.map(lin).join(' · ')}. Un préstamo nuevo para este cliente se hace como refinanciación y solo lo puede hacer el administrador.</div>`; prev(); return; }
+      w.innerHTML = `<b>Este cliente ya tiene un préstamo vigente</b>
+        ${l.length > 1 ? `<select id="n-refi-sel" style="margin-top:6px">${l.map(x => `<option value="${x.id}">${lin(x)}</option>`).join('')}</select>` : `<div class="mute" style="font-size:13px">${lin(l[0])}</div>`}
+        <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="n-refi-ck" checked style="width:auto"> Refinanciar: descontar lo que debe y cerrar el anterior</label>
+        <p class="mute" style="font-size:12px;margin:4px 0 0">Desmárcalo solo si es un préstamo aparte.</p>`;
+      $('#n-refi-ck').onchange = prev; if ($('#n-refi-sel')) $('#n-refi-sel').onchange = prev;
+      prev();
+    };
+    window.refiAlElegir = pintaRefi;
     ['n-cap', 'n-tasa', 'n-fre', 'n-cuo', 'n-precio', 'n-pct'].forEach(id => $('#' + id).oninput = prev);
     $('#n-modo').onchange = () => { const m = $('#n-modo').value; $('#n-precio-w').hidden = m !== 'precio'; $('#n-pct-w').hidden = m !== 'pct'; prev(); };
     const alTipo = (cambiaTasa) => {
@@ -888,7 +914,7 @@ async function vPrestamos() {
       if (cambiaTasa) $('#n-tasa').value = tasaDe(f ? 'fiado' : 'prestamo');
       prev();
     };
-    $('#n-tipo').onchange = () => alTipo(true);
+    $('#n-tipo').onchange = () => { alTipo(true); pintaRefi(); };
     alTipo(false);
     $('#n-go').onclick = async () => {
       const per = $('#n-per').value, cap = entero($('#n-cap').value), tasa = decimal($('#n-tasa').value), fre = $('#n-fre').value, cuo = entero($('#n-cuo').value), fec = $('#n-fec').value;
@@ -899,6 +925,17 @@ async function vPrestamos() {
       if (tipo === 'fiado' && gFi < 0) { $('#n-msg').innerHTML = '<div class="msg err">El precio final no puede ser menor al valor inicial.</div>'; return; }
       if (!per || !cap || !cuo || !fec || (tipo !== 'fiado' && isNaN(tasa))) { $('#n-msg').innerHTML = '<div class="msg err">Completa cliente, valor, tasa, cuotas y fecha.</div>'; return; }
       if (tipo === 'fiado' && !desc) { $('#n-msg').innerHTML = '<div class="msg err">Escribe qué producto se entrega.</div>'; return; }
+      const rs = refiSel();
+      if (rs && rs.bloquea) { $('#n-msg').innerHTML = '<div class="msg err">Este cliente ya tiene un préstamo vigente. Debe hacerlo el administrador como refinanciación.</div>'; return; }
+      if (rs && rs.c) {
+        const deb = rs.c.k.saldo;
+        if (cap < deb) { $('#n-msg').innerHTML = '<div class="msg err">El valor nuevo debe ser al menos lo que debe el cliente (' + money(deb) + ').</div>'; return; }
+        if (!confirm('¿Refinanciar el préstamo #' + pad(rs.c.consecutivo) + '?\n\nSe cancela la deuda de ' + money(deb) + '.\nPréstamo nuevo: ' + money(cap) + '.\nSe le entregan: ' + money(cap - deb) + '.')) return;
+        $('#n-go').disabled = true;
+        const rr = await sb.rpc('refinanciar_prestamo', { p_cuenta: rs.c.id, p_capital: cap, p_tasa: tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec });
+        if (rr.error) { $('#n-msg').innerHTML = `<div class="msg err">${esc(rr.error.message)}</div>`; $('#n-go').disabled = false; return; }
+        estCierreT = 0; cuentaSel = rr.data.nueva; setAviso('Refinanciado. Entrega al cliente ' + money(rr.data.giro) + '. Ya puedes enviarle el documento de refinanciación.', 'ok'); vPrestamos(); return;
+      }
       if (tipo !== 'fiado' && estCierre && cap > Number(estCierre.base) && !confirm('Este préstamo (' + money(cap) + ') es mayor que tu base disponible (' + money(estCierre.base) + '). ¿Crearlo de todas formas?')) return;
       $('#n-go').disabled = true;
       const { data, error } = await sb.rpc('crear_prestamo', { p_persona: per, p_capital: cap, p_tasa: tipo === 'fiado' ? Math.min(9999, Math.round(gFi / cap * 10000) / 100) : tasa, p_frecuencia: fre, p_cuotas: cuo, p_fecha: fec, p_tipo: tipo, ...(tipo === 'fiado' ? { p_ganancia: gFi } : {}), p_descripcion: tipo === 'fiado' ? desc : null });
@@ -935,6 +972,11 @@ async function vCuenta() {
   refActual = ref;
   const capPend = Math.min(k.saldo, Math.round(c.cuotas.reduce((s, q) => s + (Number(q.valor) > 0 ? (Number(q.valor) - Number(q.pagado)) * Number(q.capital_parte) / Number(q.valor) : 0), 0)));
   const puedeRefi = me.es_admin && vigente && k.saldo > 0;
+  let cand = [];
+  if (puedeRefi && !c.refinancia_a) {
+    const rr = await sb.from('cuentas').select('id,consecutivo,capital,tipo,fecha_desembolso,num_cuotas,frecuencia').eq('persona_id', c.persona_id).eq('estado', 'vigente').is('refinancia_a', null).neq('id', c.id);
+    cand = (rr.data || []).filter(x => x.tipo === c.tipo && Number(x.capital) >= k.saldo && x.fecha_desembolso >= c.fecha_desembolso);
+  }
   const sinPagos = !pagos.some(p => p.estado === 'activo');
   const puedeEditar = me.es_admin && vigente && sinPagos && !c.refinancia_a;
   const puedeBorrar = me.es_admin && sinPagos && ['vigente', 'anulado'].includes(c.estado) && !c.refinancia_a && !(ref && ref.viejo.id === c.id);
@@ -1020,6 +1062,12 @@ async function vCuenta() {
       <div id="rf-prev" class="refi-giro"></div>
       <div id="rf-msg"></div>
       <div style="margin-top:12px"><button id="rf-go">Refinanciar</button></div></details>` : ''}
+
+    ${cand.length ? `<details class="card" id="enl"><summary><b>Ya lo refinancié: enlazar con el préstamo nuevo</b></summary>
+      <p class="mute" style="font-size:13px">Si ya creaste el préstamo nuevo de este cliente, aquí lo enlazas: este queda pagado por refinanciación (se cancela lo que debe, ${money(k.saldo)}) y pasa al historial. No se borra nada.</p>
+      <label>Préstamo nuevo</label><select id="enl-sel">${cand.map(x => `<option value="${x.id}" data-cap="${x.capital}">#${pad(x.consecutivo)} · ${money(x.capital)} · ${x.num_cuotas} cuotas ${x.frecuencia} · ${fdate(x.fecha_desembolso)}</option>`).join('')}</select>
+      <div id="enl-prev" class="refi-giro"></div><div id="enl-msg"></div>
+      <div style="margin-top:12px"><button id="enl-go">Enlazar refinanciación</button></div></details>` : ''}
 
     ${puedeEditar ? `<details class="card" id="corr"><summary><b>Corregir un error</b> <span class="mute" style="font-size:13px">(solo administrador)</span></summary>
       ${puedeEditar ? `<p class="mute" style="font-size:13px">Puedes cambiar los datos mientras el préstamo no tenga pagos. Las cuotas se recalculan y el número de referencia se conserva.</p>
@@ -1149,6 +1197,18 @@ async function vCuenta() {
       if (error) { $('#rf-msg').innerHTML = '<div class="msg err">' + esc(error.message) + '</div>'; $('#rf-go').disabled = false; return; }
       cuentaSel = data.nueva;
       setAviso('Refinanciado. Entrega al cliente ' + money(data.giro) + '. Ya puedes enviarle el documento de refinanciación.', 'ok'); vPrestamos();
+    };
+  }
+  if ($('#enl-go')) {
+    const pv = () => { const o = $('#enl-sel').selectedOptions[0]; $('#enl-prev').innerHTML = 'Se cancela lo que debe: <b>' + money(k.saldo) + '</b><br>Préstamo nuevo: <b>' + money(o.dataset.cap) + '</b><br>Se le giró al cliente: <b>' + money(Number(o.dataset.cap) - k.saldo) + '</b>'; };
+    $('#enl-sel').onchange = pv; pv();
+    $('#enl-go').onclick = async () => {
+      const o = $('#enl-sel').selectedOptions[0];
+      if (!confirm('¿Enlazar la refinanciación?\n\nEl préstamo #' + pad(c.consecutivo) + ' queda pagado por refinanciación (' + money(k.saldo) + ') y el nuevo queda enlazado a él.')) return;
+      $('#enl-go').disabled = true;
+      const { data, error } = await sb.rpc('enlazar_refinanciacion', { p_vieja: c.id, p_nueva: $('#enl-sel').value });
+      if (error) { $('#enl-msg').innerHTML = '<div class="msg err">' + esc(error.message) + '</div>'; $('#enl-go').disabled = false; return; }
+      cuentaSel = data.nueva; setAviso('Refinanciación enlazada. El préstamo anterior quedó en el historial.', 'ok'); vPrestamos();
     };
   }
   if ($('#wa-go')) {

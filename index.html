@@ -1284,22 +1284,23 @@ function nuevoDoc(titulo) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
   doc.setTextColor(0);
-  let altoLogo = 0;
+  // Encabezado: logo a la izquierda (más grande) y el nombre del negocio grande, centrado en la página
+  let lw = 0, lh = 0;
   if (negocio.logo) {
     try {
-      const r = Math.min(38 / negocio.logo_w, 20 / negocio.logo_h), lw = negocio.logo_w * r, lh = negocio.logo_h * r;
+      const r = Math.min(52 / negocio.logo_w, 30 / negocio.logo_h); lw = negocio.logo_w * r; lh = negocio.logo_h * r;
       doc.addImage(negocio.logo, /^data:image\/png/.test(negocio.logo) ? 'PNG' : 'JPEG', 15, 10, lw, lh);
-      altoLogo = lh;
-    } catch (e) { altoLogo = 0; }
+    } catch (e) { lw = 0; lh = 0; }
   }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  doc.text(negocio.nombre || '', 108, 18, { align: 'center' });
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-  const lin = [];
-  lin.forEach((t, i) => doc.text(t, 108, 24 + i * 4.5, { align: 'center' }));
-  const y = Math.max(24 + lin.length * 4.5 + 3, altoLogo ? 10 + altoLogo + 4 : 0);
+  const nombre = (negocio.nombre || '').toUpperCase(), cx = 108, ancho = lw ? 2 * (108 - (15 + lw + 6)) : 186;
+  let fs = 26, lineas = [nombre]; doc.setFont('helvetica', 'bold');
+  for (; fs > 12; fs--) { doc.setFontSize(fs); lineas = doc.splitTextToSize(nombre, ancho); if (lineas.length <= (fs >= 18 ? 2 : 3)) break; }
+  const alto = Math.max(lh, 14), yc = 10 + alto / 2, paso = fs * 0.42;
+  lineas.forEach((t, i) => doc.text(t, cx, yc + fs * 0.17 - ((lineas.length - 1) * paso) / 2 + i * paso, { align: 'center' }));
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  const y = 10 + alto + 5;
   doc.setDrawColor(20, 83, 45); doc.setLineWidth(0.6); doc.line(15, y, 201, y);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
   doc.text(titulo, 108, y + 9, { align: 'center' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   return { doc, y: y + 18 };

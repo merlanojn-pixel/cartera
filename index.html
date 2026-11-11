@@ -1374,22 +1374,26 @@ function docCobro(c, k, per) {
   const h = hoy(), venc = k.atrasadas, lista = venc.length ? venc : (k.proxima ? [k.proxima] : []);
   if (!lista.length) throw new Error('Este préstamo no tiene cuotas pendientes.');
   const { doc, y } = nuevoDoc(venc.length ? 'NOTA DE COBRO' : 'RECORDATORIO DE PAGO');
-  let yy = kv(doc, y, [['Fecha', fdate(h)], ['Cliente', per.nombre], ['Referencia', pad(c.consecutivo)]]);
-  const pend = q => Number(q.valor) - Number(q.pagado), total = lista.reduce((t, q) => t + pend(q), 0), n = primerNombre(per);
+  let yy = kv(doc, y, [['Fecha', fdate(h)], ['Cliente', per.nombre], ...(per.cedula ? [['Documento', per.cedula]] : []), ['Referencia', pad(c.consecutivo)]]);
+  const pend = q => Number(q.valor) - Number(q.pagado), total = lista.reduce((t, q) => t + pend(q), 0), ref = pad(c.consecutivo);
+  const dias = venc.length ? diasEntre(venc[0].fecha_vencimiento, h) : 0, tipo = c.tipo === 'fiado' ? 'crédito' : 'préstamo';
   yy = parrafo(doc, yy + 2, venc.length
-    ? `Hola ${n}, ¿cómo estás? Esperamos que te encuentres bien. Te escribimos porque tu préstamo Referencia ${pad(c.consecutivo)} tiene ${venc.length === 1 ? 'una cuota pendiente' : venc.length + ' cuotas pendientes'}. Te pedimos ponerte al día lo antes posible. Si tienes alguna dificultad, comunícate con nosotros y lo hablamos.`
-    : `Hola ${n}, ¿cómo estás? Esperamos que te encuentres muy bien. Te recordamos la próxima cuota de tu préstamo Referencia ${pad(c.consecutivo)}.`);
+    ? `Por medio de la presente se le informa que, a la fecha, su ${tipo} Referencia ${ref} presenta ${venc.length === 1 ? '1 cuota vencida' : venc.length + ' cuotas vencidas'}, con ${dias} ${dias === 1 ? 'día' : 'días'} de atraso en la más antigua, por los valores que se detallan a continuación. Se solicita realizar el pago a la mayor brevedad para regularizar su obligación. Si presenta alguna dificultad, le agradecemos comunicarse con nosotros para acordar una solución.`
+    : `Se le recuerda que la próxima cuota de su ${tipo} Referencia ${ref} vence el ${fdate(lista[0].fecha_vencimiento)}, según el detalle que se presenta a continuación. Agradecemos realizar el pago dentro de la fecha establecida.`);
   doc.autoTable({ ...tablaEstilo, startY: yy,
     head: [['Cuota', 'Vence', 'Valor cuota', 'Abonado', 'Pendiente', 'Días de atraso']],
     body: lista.map(q => [`${q.numero} de ${c.num_cuotas}`, fdate(q.fecha_vencimiento), money(q.valor), money(q.pagado), money(pend(q)), q.fecha_vencimiento < h ? diasEntre(q.fecha_vencimiento, h) : 0]),
     foot: [['', '', '', 'Total', money(total), '']], columnStyles: { 0: { halign: 'center' }, 1: { halign: 'center' } } });
   yy = doc.lastAutoTable.finalY + 8;
   yy = negrita(doc, yy, 'Valor a pagar: ' + money(total));
-  doc.text('Saldo total del préstamo: ' + money(k.saldo), 15, yy); yy += 9;
-  yy = medioPagoPdf(doc, yy);
-  doc.setFontSize(9); doc.text('Por favor envíanos el comprobante de pago' + (negocio.wa_negocio ? ' al WhatsApp ' + negocio.wa_negocio : '') + '.', 15, yy); doc.setFontSize(10); yy += 6;
-  if (negocio.wa_negocio) yy = parrafo(doc, yy, `Para cualquier aclaración, escríbenos al WhatsApp ${negocio.wa_negocio}.`);
-  guardarPie(doc, `${venc.length ? 'Cobro' : 'Recordatorio'}_${pad(c.consecutivo)}_${nom(per.nombre)}.pdf`);
+  doc.text('Saldo total de la obligación: ' + money(k.saldo), 15, yy); yy += 9;
+  yy = medioPagoPdf(doc, yy, true);
+  if (yy > 250) { doc.addPage(); yy = 25; }
+  yy = parrafo(doc, yy, 'Una vez realizado el pago, le solicitamos enviar el soporte' + (negocio.wa_negocio ? ' al WhatsApp ' + negocio.wa_negocio : '') + ', indicando su número de referencia (' + ref + '), para registrarlo oportunamente.');
+  yy = parrafo(doc, yy, 'Si ya realizó el pago, por favor haga caso omiso de este documento.');
+  doc.text('Cordialmente,', 15, yy); yy += 6;
+  doc.setFont('helvetica', 'bold'); doc.text(negocio.nombre || '', 15, yy); doc.setFont('helvetica', 'normal');
+  guardarPie(doc, `${venc.length ? 'Cobro' : 'Recordatorio'}_${ref}_${nom(per.nombre)}.pdf`);
 }
 
 function docCartera(lista, vista) {
@@ -1448,6 +1452,37 @@ function docPazYSalvo(c, k, per, pagos) {
 
 /* ======================= AJUSTES DEL NEGOCIO ======================= */
 let logoSel = { logo: '', w: 0, h: 0 }, qrSel = { logo: '', w: 0, h: 0 };
+// QR: se guarda con buena resolución (para que no se vea borroso al imprimir) y sin el margen blanco de la captura.
+function leerQr(file) {
+  return new Promise((ok, mal) => {
+    if (!file || !/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) return mal(new Error('Elige una imagen PNG o JPG.'));
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('No se pudo leer esa imagen.')); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      try {
+        const W = img.naturalWidth, H = img.naturalHeight, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H); cx.drawImage(img, 0, 0);
+        const d = cx.getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+        if (x1 < 0) { x0 = 0; y0 = 0; x1 = W - 1; y1 = H - 1; }
+        const pad = Math.round(Math.max(x1 - x0, y1 - y0) * 0.03);
+        x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+        const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+        for (const max of [900, 720, 560, 420]) {
+          const r = Math.min(1, max / cw, max / ch), w = Math.max(1, Math.round(cw * r)), h = Math.max(1, Math.round(ch * r));
+          const c2 = document.createElement('canvas'); c2.width = w; c2.height = h; const c2x = c2.getContext('2d');
+          c2x.fillStyle = '#fff'; c2x.fillRect(0, 0, w, h); c2x.imageSmoothingQuality = 'high'; c2x.drawImage(cv, x0, y0, cw, ch, 0, 0, w, h);
+          let dd = c2.toDataURL('image/png');
+          if (dd.length > 200000) dd = c2.toDataURL('image/jpeg', 0.9);
+          if (dd.length < 230000) return ok({ logo: dd, w, h });
+        }
+        mal(new Error('La imagen es muy pesada. Usa una más pequeña.'));
+      } catch (e) { mal(new Error('No se pudo leer esa imagen.')); }
+    };
+    img.src = url;
+  });
+}
 function leerLogo(file, cuadrado) {
   return new Promise((ok, mal) => {
     if (!file || !/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) return mal(new Error('Elige una imagen PNG o JPG.'));
@@ -1544,7 +1579,7 @@ function vConfig() {
   $('#qr-pick').onclick = () => $('#qr-file').click();
   $('#qr-del').onclick = () => { qrSel = { logo: '', w: 0, h: 0 }; pintaQr(); };
   $('#qr-file').onchange = async e => {
-    try { qrSel = await leerLogo(e.target.files[0], true); pintaQr(); } catch (er) { alert(er.message); }
+    try { qrSel = await leerQr(e.target.files[0]); pintaQr(); } catch (er) { alert(er.message); }
     e.target.value = '';
   };
   $('#lg-pick').onclick = () => $('#lg-file').click();
@@ -1639,7 +1674,7 @@ function prepararQr() {
 }
 
 // Medios de pago y QR dentro de los PDF
-function medioPagoPdf(doc, y) {
+function medioPagoPdf(doc, y, sinNota) {
   const l = mediosPagoLineas();
   if (!l.length && !negocio.qr) return y;
   if (y > (negocio.qr ? 195 : 220)) { doc.addPage(); y = 25; }
@@ -1655,6 +1690,7 @@ function medioPagoPdf(doc, y) {
     } catch (e) { yq = y0; }
   }
   const fin = Math.max(yt, yq) + 1;
+  if (sinNota) return fin + 6;
   doc.setFontSize(9); doc.text('Indica tu referencia al realizar el pago.' + (negocio.wa_negocio ? ' Envía el comprobante al WhatsApp ' + negocio.wa_negocio + '.' : ''), 15, fin); doc.setFontSize(10);
   return fin + 8;
 }
